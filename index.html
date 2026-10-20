@@ -61,6 +61,11 @@ body{margin:0;background:var(--page);color:var(--ink);
 .tnum{font-variant-numeric:tabular-nums}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 input,select,textarea{font:inherit;color:inherit}
+/* mobile hardening: no iOS input auto-zoom, no double-tap-zoom delay, no sideways scroll */
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;overflow-x:hidden}
+body{overflow-x:hidden;max-width:100%}
+button,a,label{touch-action:manipulation}
+@media (pointer:coarse){input,select,textarea,.field,.search input,.frm .in,.frm select,.frm textarea,.addcat input,.ta{font-size:16px!important}}
 h1,h2,h3{margin:0;text-wrap:balance}
 :focus-visible{outline:2.5px solid var(--accent);outline-offset:2px;border-radius:6px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -88,7 +93,7 @@ main{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-lef
   padding-right:max(16px,env(safe-area-inset-right,0px));padding-top:14px;
   padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px;box-shadow:var(--shadow);margin-bottom:13px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px;box-shadow:var(--shadow);margin-bottom:13px;min-width:0;overflow-wrap:anywhere}
 .card>h2{font-size:12.5px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);margin-bottom:12px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .card>h2 .sub{font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);font-size:12px}
 
@@ -96,9 +101,9 @@ main{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-lef
 .kpis{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:13px}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 12px 13px;box-shadow:var(--shadow)}
 .tile .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
-.tile .val{font-size:18px;font-weight:700;letter-spacing:-.4px;line-height:1.1}
+.tile .val{font-size:clamp(13.5px,4.4vw,18px);font-weight:700;letter-spacing:-.4px;line-height:1.1;overflow-wrap:anywhere}
 .tile.pos .val{color:var(--pos)} .tile.neg .val{color:var(--neg)}
-@media (max-width:430px){.tile .val{font-size:15.5px}.tile{padding:10px}}
+@media (max-width:430px){.tile{padding:10px 8px}}
 
 /* chart: monthly */
 .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px}
@@ -201,7 +206,7 @@ svg .baseline{stroke:var(--line-2);stroke-width:1}
 .overlay{position:fixed;inset:0;z-index:50;background:rgba(10,10,8,.5);display:flex;align-items:flex-end;justify-content:center}
 .overlay.center{align-items:center;padding:18px}
 .sheet{width:100%;max-width:560px;background:var(--surface);border-radius:22px 22px 0 0;box-shadow:var(--shadow-sheet);
-  max-height:92vh;overflow-y:auto;padding:8px 0 calc(18px + env(safe-area-inset-bottom,0px));
+  max-height:92vh;max-height:92dvh;overflow-y:auto;padding:8px 0 calc(18px + env(safe-area-inset-bottom,0px));
   animation:up .22s cubic-bezier(.3,.9,.4,1)}
 .overlay.center .sheet{border-radius:20px;max-width:420px;animation:pop .18s ease}
 @keyframes up{from{transform:translateY(100%)}to{transform:translateY(0)}}
@@ -330,7 +335,7 @@ function render(){
   if(ui.tab==="overview")v.innerHTML=viewOverview();
   else if(ui.tab==="ops")v.innerHTML=viewOps();
   else if(ui.tab==="catalog")v.innerHTML=viewCatalog();
-  else {v.innerHTML=viewData();updateStorageStatus();updateSyncCard()}
+  else {v.innerHTML=viewData();try{updateStorageStatus();updateSyncCard()}catch(_){}}
 }
 function renderSelectors(){
   $("#selYear").innerHTML=years().map(y=>`<option value="${y}"${y===ui.year?" selected":""}>${y}</option>`).join("");
@@ -794,7 +799,7 @@ function openConflict(){
 document.addEventListener("click",e=>{
   const a=e.target.closest("[data-act]");if(!a)return;
   const act=a.dataset.act;
-  if(act==="nav"){ui.tab=a.dataset.tab;render();window.scrollTo(0,0)}
+  if(act==="nav"){ui.tab=a.dataset.tab;document.documentElement.style.overflow="";render();window.scrollTo(0,0)}
   else if(act==="theme"){let t=curTheme();t=t==="dark"?"light":t==="light"?"system":"dark";try{localStorage.setItem(LS_THEME,t)}catch(_){}applyTheme(t);if(ui.tab==="overview")render();toast(t==="dark"?"Тёмная тема":t==="light"?"Светлая тема":"Как в системе")}
   else if(act==="openAdd")openTxSheet(null);
   else if(act==="editTx"){const t=DB.tx.find(x=>x.id===a.dataset.id);if(t)openTxSheet(t)}
