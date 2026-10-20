@@ -1,0 +1,6 @@
+# Никогда не коммитим личные данные (бэкапы с реальными финансами)
+family-budget-*.json
+*-data.json
+budget-*.json
+.DS_Store
+Thumbs.db
