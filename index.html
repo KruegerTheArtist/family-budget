@@ -318,7 +318,7 @@ function load(){
 function save(skipSync){try{localStorage.setItem(LS_KEY,JSON.stringify(DB))}catch(e){toast("Не удалось сохранить (хранилище недоступно)")}if(!skipSync&&typeof scheduleSync==="function")scheduleSync();}
 
 /* ---------- derived ---------- */
-const years=()=>{const s=new Set(DB.tx.map(t=>pY(t.date)).filter(Number.isFinite));s.add(new Date().getFullYear());return[...s].sort((a,b)=>b-a)};
+const years=()=>{const s=new Set(DB.tx.map(t=>pY(t.date)).filter(y=>y>1900));s.add(new Date().getFullYear());return[...s].sort((a,b)=>b-a)};
 const catsFor=t=>t==="income"?DB.incomeCats:DB.expenseCats;
 const groupsFor=t=>{const o=[];catsFor(t).forEach(c=>{if(!o.includes(c.group))o.push(c.group)});return o.sort((a,b)=>a.localeCompare(b,"ru"))};
 const catGroup=(t,name)=>{const c=catsFor(t).find(c=>c.name===name);return c?c.group:""};

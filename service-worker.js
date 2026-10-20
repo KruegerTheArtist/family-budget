@@ -1,5 +1,5 @@
 // Семейный бюджет — офлайн-кэш (app shell). Поднимай версию при обновлении файлов.
-const CACHE = "budget-v5";
+const CACHE = "budget-v6";
 const ASSETS = [
   "./",
   "./index.html",
