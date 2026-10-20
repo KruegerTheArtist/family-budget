@@ -310,7 +310,7 @@ function load(){
   try{const r=localStorage.getItem(LS_KEY);if(r){const d=JSON.parse(r);if(d&&d.tx)return d}}catch(e){}
   return seedDB();
 }
-function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB))}catch(e){toast("Не удалось сохранить (хранилище недоступно)")}}
+function save(skipSync){try{localStorage.setItem(LS_KEY,JSON.stringify(DB))}catch(e){toast("Не удалось сохранить (хранилище недоступно)")}if(!skipSync&&typeof scheduleSync==="function")scheduleSync();}
 
 /* ---------- derived ---------- */
 const years=()=>{const s=new Set(DB.tx.map(t=>pY(t.date)));s.add(new Date().getFullYear());return[...s].sort((a,b)=>b-a)};
@@ -330,7 +330,7 @@ function render(){
   if(ui.tab==="overview")v.innerHTML=viewOverview();
   else if(ui.tab==="ops")v.innerHTML=viewOps();
   else if(ui.tab==="catalog")v.innerHTML=viewCatalog();
-  else {v.innerHTML=viewData();updateStorageStatus()}
+  else {v.innerHTML=viewData();updateStorageStatus();updateSyncCard()}
 }
 function renderSelectors(){
   $("#selYear").innerHTML=years().map(y=>`<option value="${y}"${y===ui.year?" selected":""}>${y}</option>`).join("");
@@ -521,6 +521,7 @@ function viewData(){
     <p class="msg" style="margin-top:11px">Данные хранятся в приложении на устройстве. Всё равно делай бэкап-файл — это страховка и перенос на другой телефон.</p>
     <div class="btnrow" style="margin-top:11px"><button class="btn primary block" data-act="exportCopy">Сделать бэкап (файл)</button>
       <button class="btn block" data-act="importOpen">Восстановить из бэкапа</button></div></div>`;
+  h+=`<div class="card"><h2>Синхронизация с Google-таблицей</h2><div id="syncCard"></div></div>`;
   h+=`<div class="card"><h2>Сброс</h2>
     <div class="btnrow"><button class="btn block" data-act="resetSeed">Вернуть исходные данные</button>
       <button class="btn danger block" data-act="clearTx">Удалить все операции</button></div>
@@ -663,6 +664,131 @@ function applyTheme(t){if(t==="dark"||t==="light")document.documentElement.setAt
     :`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8 8 0 1 1 11.2 3a6 6 0 0 0 9.8 9.8z"/></svg>`}
 function curTheme(){try{return localStorage.getItem(LS_THEME)||"system"}catch(e){return"system"}}
 
+/* ---------- синхронизация с Google-таблицей (Apps Script) ---------- */
+let SYNC=null, syncStatus={state:"idle",msg:""}, autoTimer=null;
+function loadSync(){try{return JSON.parse(localStorage.getItem("raskhody_sync")||"null")}catch(_){return null}}
+function persistSync(){try{SYNC?localStorage.setItem("raskhody_sync",JSON.stringify(SYNC)):localStorage.removeItem("raskhody_sync")}catch(_){}}
+function getRev(){try{return +(localStorage.getItem("raskhody_rev")||0)}catch(_){return 0}}
+function setRev(r){try{localStorage.setItem("raskhody_rev",String(r||0))}catch(_){}}
+function isDirty(){try{return localStorage.getItem("raskhody_dirty")==="1"}catch(_){return false}}
+function setDirty(v){try{v?localStorage.setItem("raskhody_dirty","1"):localStorage.removeItem("raskhody_dirty")}catch(_){}}
+function syncConfigured(){return !!(SYNC&&SYNC.url&&SYNC.token)}
+function setSync(state,msg){syncStatus={state,msg:msg||""};updateSyncCard()}
+function sanitizeDB(d){
+  if(!d||!Array.isArray(d.tx))throw new Error("плохие данные");
+  return {v:1,
+    tx:d.tx.map(t=>({id:String(t.id||uid()),type:t.type==="income"?"income":"expense",
+      date:String(t.date||"").slice(0,10),name:t.name||"",group:t.group||"",
+      category:t.category||"",amount:+t.amount||0,comment:t.comment||""})),
+    expenseCats:(Array.isArray(d.expenseCats)?d.expenseCats:[]).map(c=>({name:String(c.name||""),group:String(c.group||"")})).filter(c=>c.name),
+    incomeCats:(Array.isArray(d.incomeCats)?d.incomeCats:[]).map(c=>({name:String(c.name||""),group:String(c.group||"")})).filter(c=>c.name),
+    names:(Array.isArray(d.names)?d.names:[]).map(String)};
+}
+async function syncApi(action,extra){
+  if(!syncConfigured())throw new Error("синк не настроен");
+  const body=JSON.stringify(Object.assign({action,token:SYNC.token},extra||{}));
+  let res;
+  try{res=await fetch(SYNC.url,{method:"POST",body})}catch(e){throw new Error("нет связи (проверь URL/интернет)")}
+  const txt=await res.text();let j;
+  try{j=JSON.parse(txt)}catch(e){throw new Error("неверный ответ (проверь URL и деплой)")}
+  if(j.ok===false&&j.error==="bad token")throw new Error("неверный токен");
+  return j;
+}
+async function syncPull(){
+  const j=await syncApi("pull");
+  DB=sanitizeDB(j.data);save(true);setRev(j.rev);setDirty(false);
+  ui.year=years()[0];renderSelectors();render();
+}
+async function syncPush(force){
+  const j=await syncApi("push",{data:DB,baseRev:getRev(),force:!!force});
+  if(j.ok===false&&j.error==="conflict")return {conflict:true};
+  if(j.ok===false)throw new Error(j.error||"ошибка");
+  setRev(j.rev);setDirty(false);return {ok:true};
+}
+function scheduleSync(){
+  if(!syncConfigured())return;
+  setDirty(true);if(syncStatus.state!=="error")setSync("dirty");
+  if(!SYNC.auto)return;
+  clearTimeout(autoTimer);autoTimer=setTimeout(runAutoPush,1600);
+}
+async function runAutoPush(){
+  if(!syncConfigured())return;
+  try{setSync("syncing");const r=await syncPush(false);setSync(r&&r.conflict?"conflict":"ok")}
+  catch(e){setSync("error",e.message)}
+}
+async function syncNow(){
+  if(!syncConfigured())return toast("Синхронизация не настроена");
+  try{setSync("syncing");
+    if(isDirty()){const r=await syncPush(false);
+      if(r&&r.conflict){setSync("conflict");return openConflict()}
+      setSync("ok");toast("Отправлено в таблицу")}
+    else{await syncPull();setSync("ok");toast("Загружено из таблицы")}
+  }catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}
+}
+async function syncBoot(){
+  if(!syncConfigured())return;
+  try{setSync("syncing");const j=await syncApi("pull");
+    const remote=j.rev||0,base=getRev();
+    if(!isDirty()){DB=sanitizeDB(j.data);save(true);setRev(remote);ui.year=years()[0];renderSelectors();render();setSync("ok")}
+    else if(remote===base){await syncPush(true);setSync("ok")}
+    else setSync("conflict")
+  }catch(e){setSync("error",e.message)}
+}
+function updateSyncCard(){
+  const el=$("#syncCard");if(!el)return;
+  if(!syncConfigured()){
+    el.innerHTML=`<p class="msg">Не настроено. Подключи свою Google-таблицу — данные будут жить в облаке и синхронизироваться между устройствами.</p>
+      <button class="btn primary block" data-act="syncSettings" style="margin-top:11px">Подключить таблицу</button>`;
+    return;
+  }
+  const map={idle:["—","var(--muted)"],syncing:["синхронизация…","var(--ink-2)"],ok:["синхронизировано","var(--pos)"],
+    dirty:["есть изменения для отправки","var(--ink-2)"],conflict:["конфликт — нужно решить","var(--neg)"],error:["ошибка: "+syncStatus.msg,"var(--neg)"]};
+  const st=map[syncStatus.state]||map.idle;
+  el.innerHTML=`<div class="statline"><span class="k">Статус</span><span class="v" style="color:${st[1]}">${esc(st[0])}</span></div>
+    <div class="statline"><span class="k">Автосинхронизация</span><span class="v">${SYNC.auto?"включена":"выключена"}</span></div>
+    <div class="btnrow" style="margin-top:11px"><button class="btn primary block" data-act="syncNow">Синхронизировать сейчас</button>
+      <button class="btn block" data-act="syncSettings">Настройки</button></div>
+    ${syncStatus.state==="conflict"?`<div class="btnrow" style="margin-top:9px">
+      <button class="btn block" data-act="syncPullForce">Взять из таблицы</button>
+      <button class="btn block" data-act="syncPushForce">Отправить мои</button></div>`:""}`;
+}
+function openSyncSettings(){
+  const s=SYNC||{url:"",token:"",auto:true};
+  openModal(`<div class="grab"></div><div class="sheet-in"><h3>Синхронизация с Google-таблицей</h3>
+    <div class="frm">
+      <p class="msg">Вставь URL веб-приложения Apps Script и свой токен. Хранятся только на этом устройстве.</p>
+      <div><label>URL веб-приложения</label><input class="in" id="syUrl" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(s.url)}"></div>
+      <div><label>Токен</label><input class="in" id="syTok" value="${esc(s.token)}"></div>
+      <label style="display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink-2)"><input type="checkbox" id="syAuto" ${s.auto!==false?"checked":""}> Синхронизировать автоматически при изменениях</label>
+      <button class="btn block" id="syTest">Проверить подключение</button>
+      <button class="btn primary block" id="sySave">Сохранить</button>
+      ${syncConfigured()?`<button class="btn danger ghost block" id="syOff">Отключить синхронизацию</button>`:""}
+      <button class="btn ghost block" data-act="mClose">Отмена</button>
+    </div></div>`);
+  $("#syTest").onclick=async()=>{const url=$("#syUrl").value.trim(),token=$("#syTok").value.trim();
+    if(!url||!token)return toast("Заполни URL и токен");
+    const prev=SYNC;SYNC={url,token,auto:true};
+    try{toast("Проверяю…");const j=await syncApi("ping");toast(j&&j.ok?"Подключение работает":"Ошибка: "+((j&&j.error)||"нет ok"))}
+    catch(e){toast("Не удалось: "+e.message)}finally{SYNC=prev}};
+  $("#sySave").onclick=()=>{const url=$("#syUrl").value.trim(),token=$("#syTok").value.trim();
+    if(!url||!token)return toast("Заполни URL и токен");
+    SYNC={url,token,auto:$("#syAuto").checked};persistSync();closeModal();setSync("idle");render();
+    confirmBox("Отправить текущие данные в таблицу сейчас? Создаст вкладки и заполнит их.",async()=>{
+      try{setSync("syncing");await syncPush(true);setSync("ok");toast("Данные загружены в таблицу")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}});};
+  if(syncConfigured())$("#syOff").onclick=()=>confirmBox("Отключить синхронизацию? Данные останутся на устройстве.",()=>{SYNC=null;persistSync();setDirty(false);closeModal();render();toast("Синхронизация отключена")},true);
+}
+function openConflict(){
+  openModal(`<div class="sheet-in"><h3>Конфликт синхронизации</h3>
+    <p class="msg warn">В таблице есть изменения с другого устройства, и здесь тоже есть несохранённые. Выбери, что оставить — другой вариант будет перезаписан.</p>
+    <div class="frm" style="margin-top:12px">
+      <button class="btn primary block" id="cfPull">Взять из таблицы</button>
+      <button class="btn block" id="cfPush">Отправить мои (перезаписать таблицу)</button>
+      <button class="btn ghost block" data-act="mClose">Решить позже</button>
+    </div></div>`,true);
+  $("#cfPull").onclick=async()=>{closeModal();try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message)}};
+  $("#cfPush").onclick=async()=>{closeModal();try{setSync("syncing");await syncPush(true);setSync("ok");toast("Отправлено в таблицу")}catch(e){setSync("error",e.message)}};
+}
+
 /* ---------- global events ---------- */
 document.addEventListener("click",e=>{
   const a=e.target.closest("[data-act]");if(!a)return;
@@ -687,6 +813,10 @@ document.addEventListener("click",e=>{
   else if(act==="importOpen")openImport();
   else if(act==="resetSeed")confirmBox("Вернуть исходные данные из Excel? Текущие изменения будут потеряны.",()=>{DB=seedDB();save();ui.year=years()[0];ui.month="all";renderSelectors();render();toast("Сброшено к исходным")},true);
   else if(act==="clearTx")confirmBox("Удалить все операции? Категории и люди останутся.",()=>{DB.tx=[];save();render();toast("Операции удалены")},true);
+  else if(act==="syncSettings")openSyncSettings();
+  else if(act==="syncNow")syncNow();
+  else if(act==="syncPullForce")(async()=>{try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message)}})();
+  else if(act==="syncPushForce")(async()=>{try{setSync("syncing");await syncPush(true);setSync("ok");toast("Отправлено в таблицу")}catch(e){setSync("error",e.message)}})();
 });
 $("#overlay").addEventListener("click",e=>{if(e.target===$("#overlay"))closeModal()});
 document.addEventListener("change",e=>{
@@ -720,6 +850,8 @@ ui.year=years()[0];
 applyTheme(curTheme());
 renderSelectors();
 render();
+SYNC=loadSync();
+syncBoot();
 
 if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(()=>{})}
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("service-worker.js").catch(()=>{})})}
