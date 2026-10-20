@@ -79,6 +79,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .brand{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .brand h1{font-size:17px;font-weight:700;letter-spacing:-.2px;display:flex;align-items:center;gap:8px}
 .brand h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.brand h1 .ver{font-size:11px;color:var(--muted);font-weight:500;letter-spacing:0;margin-left:2px}
 .iconbtn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--line)}
 .iconbtn:active{background:var(--surface-3)}
 .period{display:flex;gap:8px}
@@ -248,7 +249,7 @@ svg .baseline{stroke:var(--line-2);stroke-width:1}
 <div class="topbar">
   <div class="topbar-in">
     <div class="brand">
-      <h1><span class="dot"></span>Семейный бюджет</h1>
+      <h1><span class="dot"></span>Семейный бюджет<span class="ver" id="verLbl"></span></h1>
       <button class="iconbtn" data-act="theme" aria-label="Сменить тему" id="themeBtn"></button>
     </div>
     <div class="period" id="periodRow">
@@ -285,6 +286,7 @@ const SEED_RAW = {"expenseCatGroup":{"Автозапчасти":"Авто","Ав
 const MONTHS=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const MONTHS_SH=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const LS_KEY="raskhody_v1", LS_THEME="raskhody_theme";
+const APP_VERSION=("7".indexOf("__")===0?"dev":"7");
 const PAL=["--c1","--c2","--c3","--c4","--c5","--c6","--c7","--c8"];
 
 /* ---------- utils ---------- */
@@ -806,7 +808,8 @@ function openConflict(){
 }
 
 /* ---------- global events ---------- */
-document.addEventListener("click",e=>{
+document.addEventListener("click",e=>{try{onAct(e)}catch(err){console.error(err);toast("Ошибка: "+(err&&err.message||err))}});
+function onAct(e){
   const a=e.target.closest("[data-act]");if(!a)return;
   const act=a.dataset.act;
   if(act==="nav"){ui.tab=a.dataset.tab;document.documentElement.style.overflow="";render();window.scrollTo(0,0)}
@@ -833,7 +836,7 @@ document.addEventListener("click",e=>{
   else if(act==="syncNow")syncNow();
   else if(act==="syncPullForce")confirmBox("Заменить данные в приложении данными из таблицы?",()=>{(async()=>{try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}})()});
   else if(act==="syncPushForce")confirmBox("Перезаписать таблицу данными из приложения?",()=>{(async()=>{try{setSync("syncing");await syncPush(true);setSync("ok");toast("Отправлено в таблицу")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}})()},true);
-});
+}
 $("#overlay").addEventListener("click",e=>{if(e.target===$("#overlay"))closeModal()});
 document.addEventListener("change",e=>{
   const s=e.target.closest("[data-ch]");if(!s)return;const k=s.dataset.ch;
@@ -864,13 +867,14 @@ async function updateStorageStatus(){
 DB=load();
 ui.year=years()[0];
 applyTheme(curTheme());
+try{$("#verLbl").textContent="v"+APP_VERSION}catch(_){}
 renderSelectors();
 render();
 SYNC=loadSync();
 syncBoot();
 
 if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(()=>{})}
-if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("service-worker.js").catch(()=>{})})}
+if("serviceWorker" in navigator){const hadSW=!!navigator.serviceWorker.controller;let swReloaded=false;navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadSW&&!swReloaded){swReloaded=true;location.reload()}});window.addEventListener("load",()=>{navigator.serviceWorker.register("service-worker.js").catch(()=>{})})}
 </script>
 </body>
 </html>
