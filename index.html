@@ -318,7 +318,7 @@ function load(){
 function save(skipSync){try{localStorage.setItem(LS_KEY,JSON.stringify(DB))}catch(e){toast("Не удалось сохранить (хранилище недоступно)")}if(!skipSync&&typeof scheduleSync==="function")scheduleSync();}
 
 /* ---------- derived ---------- */
-const years=()=>{const s=new Set(DB.tx.map(t=>pY(t.date)));s.add(new Date().getFullYear());return[...s].sort((a,b)=>b-a)};
+const years=()=>{const s=new Set(DB.tx.map(t=>pY(t.date)).filter(Number.isFinite));s.add(new Date().getFullYear());return[...s].sort((a,b)=>b-a)};
 const catsFor=t=>t==="income"?DB.incomeCats:DB.expenseCats;
 const groupsFor=t=>{const o=[];catsFor(t).forEach(c=>{if(!o.includes(c.group))o.push(c.group)});return o.sort((a,b)=>a.localeCompare(b,"ru"))};
 const catGroup=(t,name)=>{const c=catsFor(t).find(c=>c.name===name);return c?c.group:""};
@@ -332,10 +332,16 @@ function render(){
   $("#periodRow").hidden=!(ui.tab==="overview"||ui.tab==="ops");
   $("#fab").hidden=!(ui.tab==="overview"||ui.tab==="ops");
   [...$("#nav").children].forEach(b=>b.classList.toggle("on",b.dataset.tab===ui.tab));
-  if(ui.tab==="overview")v.innerHTML=viewOverview();
-  else if(ui.tab==="ops")v.innerHTML=viewOps();
-  else if(ui.tab==="catalog")v.innerHTML=viewCatalog();
-  else {v.innerHTML=viewData();try{updateStorageStatus();updateSyncCard()}catch(_){}}
+  let html="";
+  try{
+    if(ui.tab==="overview")html=viewOverview();
+    else if(ui.tab==="ops")html=viewOps();
+    else if(ui.tab==="catalog")html=viewCatalog();
+    else html=viewData();
+  }catch(e){console.error(e);html=`<div class="card"><h2>Ошибка отображения</h2><p class="msg warn">${esc(e&&e.message||e)}</p>
+    <p class="hint">Данные не потеряны. Сделай скриншот этого текста — он поможет найти причину.</p></div>`}
+  v.innerHTML=html;
+  if(ui.tab==="data"){try{updateSyncCard();if(typeof updateStorageStatus==="function")updateStorageStatus()}catch(_){}}
 }
 function renderSelectors(){
   $("#selYear").innerHTML=years().map(y=>`<option value="${y}"${y===ui.year?" selected":""}>${y}</option>`).join("");
@@ -473,7 +479,9 @@ function viewOps(){
   h+=`</div></div>`;
   return h;
 }
-function fullDate(s){const d=new Date(pY(s),pM(s),+s.slice(8,10));const wd=["вс","пн","вт","ср","чт","пт","сб"][d.getDay()];return `${d.getDate()} ${MONTHS[pM(s)].toLowerCase()} ${pY(s)}, ${wd}`}
+const validDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(String(s||""));
+const normDate=s=>{const m=String(s||"").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);return m?m[1]+"-"+m[2].padStart(2,"0")+"-"+m[3].padStart(2,"0"):""};
+function fullDate(s){if(!validDate(s))return "без даты";const d=new Date(pY(s),pM(s),+s.slice(8,10));const wd=["вс","пн","вт","ср","чт","пт","сб"][d.getDay()];return `${d.getDate()} ${(MONTHS[pM(s)]||"?").toLowerCase()} ${pY(s)}, ${wd}`}
 function plural(n,a,b,c){n=Math.abs(n)%100;const n1=n%10;if(n>10&&n<20)return c;if(n1>1&&n1<5)return b;if(n1===1)return a;return c}
 
 /* ---------- catalog ---------- */
@@ -512,13 +520,15 @@ function catalogSection(type,title){
 /* ---------- data tab ---------- */
 function viewData(){
   const exp=DB.tx.filter(t=>t.type==="expense"),inc=DB.tx.filter(t=>t.type==="income");
-  const dates=DB.tx.map(t=>t.date).sort();
+  const dates=DB.tx.map(t=>t.date).filter(validDate).sort(), noDate=DB.tx.length-dates.length;
   let h=`<div class="card"><h2>Статистика</h2>
     <div class="statline"><span class="k">Всего операций</span><span class="v tnum">${DB.tx.length}</span></div>
     <div class="statline"><span class="k">Расходы (всего)</span><span class="v tnum" style="color:var(--neg)">${rub(sum(exp))}</span></div>
     <div class="statline"><span class="k">Доходы (всего)</span><span class="v tnum" style="color:var(--pos)">${rub(sum(inc))}</span></div>
     <div class="statline"><span class="k">Категорий расходов / доходов</span><span class="v tnum">${DB.expenseCats.length} / ${DB.incomeCats.length}</span></div>
     <div class="statline"><span class="k">Период данных</span><span class="v">${dates.length?fullDate(dates[0]).split(",")[0]+" — "+fullDate(dates[dates.length-1]).split(",")[0]:"—"}</span></div>
+    ${noDate?`<div class="statline"><span class="k" style="color:var(--neg)">Операций без даты</span><span class="v tnum" style="color:var(--neg)">${noDate}</span></div>
+    <p class="hint">У этих операций дата не распозналась при синхронизации — они не попадают в Обзор и Операции. Проверь колонку «Дата» в таблице.</p>`:""}
   </div>`;
   h+=`<div class="card"><h2>Надёжность данных</h2>
     <div class="statline"><span class="k">Постоянное хранилище</span><span class="v" id="storeStatus">проверка…</span></div>
@@ -683,7 +693,7 @@ function sanitizeDB(d){
   if(!d||!Array.isArray(d.tx))throw new Error("плохие данные");
   return {v:1,
     tx:d.tx.map(t=>({id:String(t.id||uid()),type:t.type==="income"?"income":"expense",
-      date:String(t.date||"").slice(0,10),name:t.name||"",group:t.group||"",
+      date:normDate(t.date),name:t.name||"",group:t.group||"",
       category:t.category||"",amount:+t.amount||0,comment:t.comment||""})),
     expenseCats:(Array.isArray(d.expenseCats)?d.expenseCats:[]).map(c=>({name:String(c.name||""),group:String(c.group||"")})).filter(c=>c.name),
     incomeCats:(Array.isArray(d.incomeCats)?d.incomeCats:[]).map(c=>({name:String(c.name||""),group:String(c.group||"")})).filter(c=>c.name),

@@ -66,6 +66,10 @@ function z_(n) { n = Number(n); return (n < 10 ? '0' : '') + n; }
 function fmt_(d) { return d.getFullYear() + '-' + z_(d.getMonth() + 1) + '-' + z_(d.getDate()); }
 function toYMD_(v, year, monthName) {
   if (v instanceof Date && !isNaN(v)) return fmt_(v);
+  if (typeof v === 'number' && v > 20000 && v < 80000) { // дата пришла серийным числом Sheets
+    var sd = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+    return sd.getUTCFullYear() + '-' + z_(sd.getUTCMonth() + 1) + '-' + z_(sd.getUTCDate());
+  }
   var s = String(v || '').trim(), m;
   if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return m[1] + '-' + m[2] + '-' + m[3];
   if ((m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/))) return m[3] + '-' + z_(m[2]) + '-' + z_(m[1]);
