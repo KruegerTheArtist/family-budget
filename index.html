@@ -748,9 +748,10 @@ function updateSyncCard(){
     <div class="statline"><span class="k">Автосинхронизация</span><span class="v">${SYNC.auto?"включена":"выключена"}</span></div>
     <div class="btnrow" style="margin-top:11px"><button class="btn primary block" data-act="syncNow">Синхронизировать сейчас</button>
       <button class="btn block" data-act="syncSettings">Настройки</button></div>
-    ${syncStatus.state==="conflict"?`<div class="btnrow" style="margin-top:9px">
+    <div class="btnrow" style="margin-top:9px">
       <button class="btn block" data-act="syncPullForce">Взять из таблицы</button>
-      <button class="btn block" data-act="syncPushForce">Отправить мои</button></div>`:""}`;
+      <button class="btn block" data-act="syncPushForce">Отправить в таблицу</button></div>
+    <p class="hint">«Взять из таблицы» заменит данные в приложении данными из таблицы. «Отправить в таблицу» — наоборот.</p>`;
 }
 function openSyncSettings(){
   const s=SYNC||{url:"",token:"",auto:true};
@@ -815,8 +816,8 @@ document.addEventListener("click",e=>{
   else if(act==="clearTx")confirmBox("Удалить все операции? Категории и люди останутся.",()=>{DB.tx=[];save();render();toast("Операции удалены")},true);
   else if(act==="syncSettings")openSyncSettings();
   else if(act==="syncNow")syncNow();
-  else if(act==="syncPullForce")(async()=>{try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message)}})();
-  else if(act==="syncPushForce")(async()=>{try{setSync("syncing");await syncPush(true);setSync("ok");toast("Отправлено в таблицу")}catch(e){setSync("error",e.message)}})();
+  else if(act==="syncPullForce")confirmBox("Заменить данные в приложении данными из таблицы?",()=>{(async()=>{try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}})()});
+  else if(act==="syncPushForce")confirmBox("Перезаписать таблицу данными из приложения?",()=>{(async()=>{try{setSync("syncing");await syncPush(true);setSync("ok");toast("Отправлено в таблицу")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}})()},true);
 });
 $("#overlay").addEventListener("click",e=>{if(e.target===$("#overlay"))closeModal()});
 document.addEventListener("change",e=>{
