@@ -5,8 +5,10 @@
  *  - «Таблица расходов»: приложение заполняет только Категория, Расходы, руб., Имя, Комментарии, Дата.
  *    №, Год, Месяц, Группа — формулы таблицы, скрипт лишь протягивает их на новые строки.
  *  - «Таблица доходов»: Имя, Группа, Категория, Доходы, руб., Дата, Комментарии (+ нумерация №).
- *  - «Данные»: справочники (A — группы расходов, B — категории расходов, C — имена,
+ *  - «Данные»: справочники (A — группы расходов, B — категории расходов,
  *    J:K — категория→группа расходов, P:Q — категория→группа доходов).
+ *  - Имена берутся из выпадающего списка колонки «Имя» таблицы расходов (если его нет — из «Данные»!C)
+ *    и из приложения в таблицу не пишутся.
  * Колонки ищутся по заголовкам в первой строке, поэтому их порядок можно менять.
  * Сводки, месячные листы и всё правее таблиц скрипт не трогает.
  *
@@ -129,7 +131,19 @@ function readAll_() {
   var tx = [];
   readTable_(sheet_(ss, SH_EXP), SPEC_EXP, groupMap_(expenseCats), tx);
   readTable_(sheet_(ss, SH_INC), SPEC_INC, groupMap_(incomeCats), tx);
-  return { v: 1, tx: tx, expenseCats: expenseCats, incomeCats: incomeCats, names: readCol_(d, 3) };
+  var names = allowedNames_(sheet_(ss, SH_EXP), SPEC_EXP);
+  return { v: 1, tx: tx, expenseCats: expenseCats, incomeCats: incomeCats, names: names.length ? names : readCol_(d, 3) };
+}
+/** Имена — из выпадающего списка колонки «Имя» в таблице расходов (как разрешено в самой таблице). */
+function allowedNames_(s, spec) {
+  var rule = s.getRange(2, layout_(s, spec).cols.name + 1).getDataValidation();
+  if (!rule) return [];
+  var type = rule.getCriteriaType(), arg = rule.getCriteriaValues()[0], vals = [];
+  if (type === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) vals = arg || [];
+  else if (type === SpreadsheetApp.DataValidationCriteria.VALUE_IN_RANGE && arg) vals = [].concat.apply([], arg.getValues());
+  var out = [];
+  vals.forEach(function (v) { v = String(v || '').trim(); if (v && out.indexOf(v) < 0) out.push(v); });
+  return out;
 }
 function groupMap_(cats) { var m = {}; cats.forEach(function (c) { m[c.name] = c.group; }); return m; }
 function readTable_(s, spec, groups, out) {
@@ -169,11 +183,11 @@ function writeAll_(db) {
   writeTable_(sheet_(ss, SH_INC), SPEC_INC, tx.filter(function (t) { return t.type === 'income'; }));
 
   var d = sheet_(ss, SH_DATA);
-  var ec = db.expenseCats || [], ic = db.incomeCats || [], names = db.names || [];
+  var ec = db.expenseCats || [], ic = db.incomeCats || [];
   var groups = []; ec.forEach(function (c) { if (c.group && groups.indexOf(c.group) < 0) groups.push(c.group); });
   writeCol_(d, 1, groups);                                              // A: группы расходов
   writeCol_(d, 2, ec.map(function (c) { return c.name; }));               // B: категории расходов
-  writeCol_(d, 3, names);                                               // C: имена
+  // C (имена) не пишем: список имён ведётся в самой таблице (выпадающий список колонки «Имя»)
   writeCols_(d, 10, ec.map(function (c) { return [c.name, c.group]; }));   // J:K
   writeCols_(d, 16, ic.map(function (c) { return [c.name, c.group]; }));   // P:Q
 }

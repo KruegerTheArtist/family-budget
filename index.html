@@ -286,7 +286,7 @@ const SEED_RAW = {"expenseCatGroup":{"Автозапчасти":"Авто","Ав
 const MONTHS=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const MONTHS_SH=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const LS_KEY="raskhody_v1", LS_THEME="raskhody_theme";
-const APP_VERSION=("7".indexOf("__")===0?"dev":"7");
+const APP_VERSION=("8".indexOf("__")===0?"dev":"8");
 const PAL=["--c1","--c2","--c3","--c4","--c5","--c6","--c7","--c8"];
 
 /* ---------- utils ---------- */
@@ -791,8 +791,8 @@ function openSyncSettings(){
   $("#sySave").onclick=()=>{const url=$("#syUrl").value.trim(),token=$("#syTok").value.trim();
     if(!url||!token)return toast("Заполни URL и токен");
     SYNC={url,token,auto:$("#syAuto").checked};persistSync();closeModal();setSync("idle");render();
-    confirmBox("Отправить текущие данные в таблицу сейчас? Создаст вкладки и заполнит их.",async()=>{
-      try{setSync("syncing");await syncPush(true);setSync("ok");toast("Данные загружены в таблицу")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}});};
+    confirmBox("Взять данные из таблицы? Данные в приложении заменятся данными из таблицы.",async()=>{
+      try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}});};
   if(syncConfigured())$("#syOff").onclick=()=>confirmBox("Отключить синхронизацию? Данные останутся на устройстве.",()=>{SYNC=null;persistSync();setDirty(false);closeModal();render();toast("Синхронизация отключена")},true);
 }
 function openConflict(){
