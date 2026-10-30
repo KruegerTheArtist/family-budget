@@ -286,7 +286,7 @@ const SEED_RAW = {"expenseCatGroup":{"Автозапчасти":"Авто","Ав
 const MONTHS=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const MONTHS_SH=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const LS_KEY="raskhody_v1", LS_THEME="raskhody_theme";
-const APP_VERSION=("8".indexOf("__")===0?"dev":"8");
+const APP_VERSION=("9".indexOf("__")===0?"dev":"9");
 const PAL=["--c1","--c2","--c3","--c4","--c5","--c6","--c7","--c8"];
 
 /* ---------- utils ---------- */
@@ -297,7 +297,7 @@ const ymd=d=>{const z=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+z(
 const today=()=>ymd(new Date());
 function pY(s){return +String(s).slice(0,4)}
 function pM(s){return (+String(s).slice(5,7))-1}
-const rub=(n,dec=0)=>new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:dec,maximumFractionDigits:dec}).format(Math.round(n*100)/100);
+const rub=(n,dec=2)=>new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:dec,maximumFractionDigits:dec}).format(Math.round(n*100)/100);
 function compact(n){n=Math.round(Math.abs(n));if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1).replace(".",",")+" млн";if(n>=1e3)return Math.round(n/1e3)+" тыс";return String(n)}
 const cssv=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 function dateHuman(s){const d=new Date(pY(s),pM(s),+s.slice(8,10));return d.getDate()+" "+MONTHS[pM(s)].toLowerCase().replace("ь","я").replace("т","та").replace(/й$/,"я")}

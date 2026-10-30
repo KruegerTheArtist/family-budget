@@ -75,9 +75,11 @@ function out_(obj) {
 }
 
 /* ---------- таблица / ревизия ---------- */
+var TZ_ = null; // часовой пояс таблицы: даты пишем и читаем в нём, а не в поясе проекта Apps Script
 function ss_() {
-  if (SHEET_ID && SHEET_ID.indexOf('ВСТАВЬ') !== 0) return SpreadsheetApp.openById(SHEET_ID);
-  return SpreadsheetApp.getActiveSpreadsheet();
+  var ss = (SHEET_ID && SHEET_ID.indexOf('ВСТАВЬ') !== 0) ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  TZ_ = ss.getSpreadsheetTimeZone();
+  return ss;
 }
 function sheet_(ss, name) {
   var s = ss.getSheetByName(name);
@@ -112,7 +114,7 @@ function layout_(s, spec) {
 /* ---------- даты ---------- */
 function z_(n) { n = Number(n); return (n < 10 ? '0' : '') + n; }
 function toYMD_(v) {
-  if (v instanceof Date && !isNaN(v)) return v.getFullYear() + '-' + z_(v.getMonth() + 1) + '-' + z_(v.getDate());
+  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, TZ_, 'yyyy-MM-dd');
   if (typeof v === 'number' && v > 20000 && v < 80000) { // дата пришла серийным числом Sheets
     var sd = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
     return sd.getUTCFullYear() + '-' + z_(sd.getUTCMonth() + 1) + '-' + z_(sd.getUTCDate());
@@ -122,7 +124,7 @@ function toYMD_(v) {
   if ((m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/))) return m[3] + '-' + z_(m[2]) + '-' + z_(m[1]);
   return '';
 }
-function fromYMD_(s) { var p = String(s || '').split('-'); if (p.length < 3) return ''; return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
+function fromYMD_(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? Utilities.parseDate(s, TZ_, 'yyyy-MM-dd') : ''; }
 
 /* ---------- чтение ---------- */
 function readAll_() {
@@ -203,8 +205,8 @@ function writeTable_(s, spec, items) {
       if (f === 'date') return [fromYMD_(t.date)];
       return [t[f] || ''];
     });
-    var rg = s.getRange(2, L.cols[f] + 1, n, 1).setValues(vals);
-    if (f === 'date') rg.setNumberFormat('dd.MM.yyyy');
+    // формат не задаём: в «Таблице» Google колонка «Дата» типизирована, и setNumberFormat там запрещён
+    s.getRange(2, L.cols[f] + 1, n, 1).setValues(vals);
   });
 
   // остальные колонки шапки: формулы из строки 2 протягиваем на все строки, «№» без формулы — нумеруем
