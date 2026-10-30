@@ -7,7 +7,7 @@
 <meta name="description" content="Учёт доходов и расходов семьи с графиками">
 <meta name="robots" content="noindex, nofollow">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#f3f2ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1a1a18" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -24,7 +24,7 @@ img{max-width:100%;display:block}
 :root{
   --page:#f3f2ef; --surface:#ffffff; --surface-2:#faf9f6; --surface-3:#f0eee9;
   --ink:#17160f; --ink-2:#5c5a51; --muted:#8c897f; --line:#e6e4dc; --line-2:#d9d7ce;
-  --accent:#2a6fd6; --accent-2:#1f5bb8; --accent-ink:#ffffff;
+  --accent:#2a6fd6; --accent-2:#1f5bb8; --accent-ink:#ffffff; --accent-bg:rgba(42,111,214,.13);
   --pos:#15905e; --pos-bg:rgba(21,144,94,.10);
   --neg:#cf4040; --neg-bg:rgba(207,64,64,.10);
   --shadow:0 1px 2px rgba(20,19,15,.05),0 3px 10px rgba(20,19,15,.05);
@@ -35,7 +35,7 @@ img{max-width:100%;display:block}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --page:#0d0d0c; --surface:#1a1a18; --surface-2:#201f1c; --surface-3:#262521;
   --ink:#f1efe8; --ink-2:#bebcb2; --muted:#8c897f; --line:#2c2b27; --line-2:#3a3833;
-  --accent:#5a9bf0; --accent-2:#78aef3; --accent-ink:#0d1b33;
+  --accent:#5a9bf0; --accent-2:#78aef3; --accent-ink:#0d1b33; --accent-bg:rgba(90,155,240,.18);
   --pos:#2cbd86; --pos-bg:rgba(44,189,134,.14);
   --neg:#e66767; --neg-bg:rgba(230,103,103,.14);
   --shadow:none; --shadow-sheet:0 -8px 40px rgba(0,0,0,.55);
@@ -45,7 +45,7 @@ img{max-width:100%;display:block}
 :root[data-theme="dark"]{
   --page:#0d0d0c; --surface:#1a1a18; --surface-2:#201f1c; --surface-3:#262521;
   --ink:#f1efe8; --ink-2:#bebcb2; --muted:#8c897f; --line:#2c2b27; --line-2:#3a3833;
-  --accent:#5a9bf0; --accent-2:#78aef3; --accent-ink:#0d1b33;
+  --accent:#5a9bf0; --accent-2:#78aef3; --accent-ink:#0d1b33; --accent-bg:rgba(90,155,240,.18);
   --pos:#2cbd86; --pos-bg:rgba(44,189,134,.14);
   --neg:#e66767; --neg-bg:rgba(230,103,103,.14);
   --shadow:none; --shadow-sheet:0 -8px 40px rgba(0,0,0,.55);
@@ -53,17 +53,21 @@ img{max-width:100%;display:block}
   color-scheme:dark;
 }
 *{box-sizing:border-box}
-html{height:100%;background:var(--page);color-scheme:light}
-body{min-height:100%}
+html{background:var(--page);color-scheme:light}
+body{min-height:100vh;min-height:100dvh}
 body{margin:0;background:var(--page);color:var(--ink);
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.45;
   -webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
-.tnum{font-variant-numeric:tabular-nums}
+.tnum{font-variant-numeric:tabular-nums;white-space:nowrap}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 input,select,textarea{font:inherit;color:inherit}
-/* mobile hardening: no iOS input auto-zoom, no double-tap-zoom delay, no sideways scroll */
-html{touch-action:manipulation;-webkit-text-size-adjust:100%;overflow-x:hidden}
-body{overflow-x:hidden;max-width:100%}
+/* mobile hardening: no iOS input auto-zoom, no double-tap-zoom delay, no sideways scroll.
+   Боковой скролл режем только на body через clip: html{height:100%} + overflow-x:hidden на html и body
+   в Chrome на Android ломают прокрутку пальцем. */
+html{touch-action:manipulation;-webkit-text-size-adjust:100%}
+html.locked{overflow:hidden}
+body{overflow-x:clip;max-width:100%}
+@supports not (overflow:clip){body{overflow-x:hidden}}
 button,a,label{touch-action:manipulation}
 @media (pointer:coarse){input,select,textarea,.field,.search input,.frm .in,.frm select,.frm textarea,.addcat input,.ta{font-size:16px!important}}
 h1,h2,h3{margin:0;text-wrap:balance}
@@ -99,12 +103,14 @@ main{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-lef
 .card>h2 .sub{font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);font-size:12px}
 
 /* KPI tiles */
-.kpis{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:13px}
-.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 12px 13px;box-shadow:var(--shadow)}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:13px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 13px 13px;box-shadow:var(--shadow);min-width:0}
 .tile .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
-.tile .val{font-size:clamp(13.5px,4.4vw,18px);font-weight:700;letter-spacing:-.4px;line-height:1.1;overflow-wrap:anywhere}
+.tile .val{font-size:clamp(15px,4.8vw,21px);font-weight:700;letter-spacing:-.4px;line-height:1.15}
 .tile.pos .val{color:var(--pos)} .tile.neg .val{color:var(--neg)}
-@media (max-width:430px){.tile{padding:10px 8px}}
+.tile.bal{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.tile.bal .lbl{margin:0}
+@media (min-width:600px){.kpis{grid-template-columns:1fr 1fr 1fr}.tile.bal{grid-column:auto;display:block}.tile.bal .lbl{margin-bottom:5px}}
 
 /* chart: monthly */
 .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px}
@@ -141,11 +147,13 @@ svg .baseline{stroke:var(--line-2);stroke-width:1}
 /* transactions list */
 .oplist{display:flex;flex-direction:column}
 .daygrp{margin-bottom:4px}
-.dayhd{font-size:12px;color:var(--muted);font-weight:600;padding:12px 2px 7px;display:flex;justify-content:space-between}
-.tx{display:flex;align-items:center;gap:11px;padding:10px 4px;border-top:1px solid var(--line);width:100%;text-align:left}
+.dayhd{font-size:12px;color:var(--muted);font-weight:600;padding:12px 2px 7px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px}
+.tx{display:flex;align-items:center;gap:11px;padding:10px 4px;border-top:1px solid var(--line);width:100%;text-align:left;border-radius:10px}
+.tx:active{background:var(--surface-2)}
 .tx:first-child{border-top:0}
 .tx .ic{width:38px;height:38px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;font-weight:700;font-size:14px;background:var(--surface-3);color:var(--ink-2)}
 .tx .mid{flex:1;min-width:0}
+.tx .ca,.tx .meta{display:block}
 .tx .ca{font-size:14.5px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tx .meta{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tx .amt{font-weight:700;font-size:15px;flex:0 0 auto}
@@ -194,7 +202,8 @@ svg .baseline{stroke:var(--line-2);stroke-width:1}
 .nav-in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
 .nav button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px 8px;color:var(--muted);font-size:10.5px;font-weight:550}
 .nav button.on{color:var(--accent)}
-.nav button svg{width:23px;height:23px}
+.nav button svg{width:58px;height:30px;padding:4px 17px;border-radius:15px;transition:background .15s}
+.nav button.on svg{background:var(--accent-bg)}
 
 /* FAB */
 .fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:31;
@@ -207,7 +216,7 @@ svg .baseline{stroke:var(--line-2);stroke-width:1}
 .overlay{position:fixed;inset:0;z-index:50;background:rgba(10,10,8,.5);display:flex;align-items:flex-end;justify-content:center}
 .overlay.center{align-items:center;padding:18px}
 .sheet{width:100%;max-width:560px;background:var(--surface);border-radius:22px 22px 0 0;box-shadow:var(--shadow-sheet);
-  max-height:92vh;max-height:92dvh;overflow-y:auto;padding:8px 0 calc(18px + env(safe-area-inset-bottom,0px));
+  max-height:92vh;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;padding:8px 0 calc(18px + env(safe-area-inset-bottom,0px));
   animation:up .22s cubic-bezier(.3,.9,.4,1)}
 .overlay.center .sheet{border-radius:20px;max-width:420px;animation:pop .18s ease}
 @keyframes up{from{transform:translateY(100%)}to{transform:translateY(0)}}
@@ -218,7 +227,26 @@ svg .baseline{stroke:var(--line-2);stroke-width:1}
 .frm{display:flex;flex-direction:column;gap:13px}
 .frm label{font-size:12px;color:var(--ink-2);font-weight:600;display:block;margin-bottom:6px}
 .frm .in,.frm select,.frm textarea{width:100%;background:var(--surface-2);border:1px solid var(--line-2);border-radius:11px;padding:11px 12px;font-size:15px}
-.frm select{appearance:none;-webkit-appearance:none;background-image:none}
+.frm select,.frm select.in{appearance:none;-webkit-appearance:none;padding-right:36px;background-repeat:no-repeat;background-position:right 13px center;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238c897f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+#txAmt{font-size:24px!important;font-weight:700;padding:11px 40px 11px 14px;letter-spacing:-.3px}
+.amtfield .cur{font-size:18px}
+/* выбор даты: быстрые кнопки + свой календарь (тап по дню сразу выбирает, без «ОК») */
+.datebar{display:flex;gap:8px;flex-wrap:wrap}
+.chipbtn{padding:9px 14px;border-radius:20px;background:var(--surface-2);border:1px solid var(--line-2);font-size:14px;font-weight:550;color:var(--ink-2)}
+.chipbtn.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+.datebtn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:space-between;gap:8px}
+.datebtn::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg)}
+.cal{margin-top:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:8px 8px 10px}
+.cal-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;font-weight:650;font-size:15px}
+.cal-hd button{width:40px;height:40px;border-radius:12px;font-size:22px;line-height:1;color:var(--ink-2)}
+.cal-hd button:active{background:var(--surface-3)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}
+.cal-grid .wd{font-size:11px;color:var(--muted);padding:4px 0 6px;font-weight:600}
+.cd{height:42px;border-radius:12px;font-size:15px;font-variant-numeric:tabular-nums}
+.cd:active{background:var(--surface-3)}
+.cd.td{color:var(--accent);font-weight:700}
+.cd.on{background:var(--accent);color:var(--accent-ink);font-weight:700}
 .frm textarea{resize:vertical;min-height:44px}
 .amtfield{position:relative}
 .amtfield .cur{position:absolute;right:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-weight:600}
@@ -284,9 +312,10 @@ svg .baseline{stroke:var(--line-2);stroke-width:1}
 "use strict";
 const SEED_RAW = {"expenseCatGroup":{"Автозапчасти":"Авто","Автомойка":"Авто","Авторемонт":"Авто","Анализы":"Здоровье","Аптеки":"Здоровье","Аренда":"Обязательные платежи","Бассейн":"Кружки","Бензин":"Авто","Бытовая химия":"Дом","Врачи и обследования":"Здоровье","Детский сад":"Обязательные платежи","Игрушки и книги":"Детские товары","ИИ":"Прочие расходы","Интернет":"Прочие расходы","Ипотека":"Обязательные платежи","Каршеринг":"Авто","Кино":"Развлечения","Книги":"Увлечения","Коммунальные услуги":"Дом","Косметика":"Красота","Косметология":"Красота","Кофе":"Кафе и рестораны","Кредиты":"Обязательные платежи","Мебель":"Дом","Мобильная связь":"Прочие расходы","Налоги":"Обязательные платежи","Обувь":"Одежда и обувь","Одежда":"Одежда и обувь","Парковки":"Авто","Переводы":"Прочие расходы","Подарки":"Прочие расходы","Продукты":"Дом","Прочее":"Прочие расходы","Ремонт":"Дом","Рестораны":"Кафе и рестораны","Рукоделие":"Увлечения","Спорт":"Прочие расходы","Страхование":"Обязательные платежи","Танцы":"Кружки","Техника":"Дом","Товары для дома":"Дом","Уходовые средства":"Уход и гигиена","ФастФуд":"Кафе и рестораны","Цифровые подписки":"Прочие расходы","Штрафы":"Авто"},"incomeCatGroup":{"Аванс":"Заработная плата","Больничные":"Заработная плата","Заработная плата":"Заработная плата","Кэшбэк":"Проценты","Отпускные":"Заработная плата","Премия":"Заработная плата","Проценты с вклада":"Проценты"},"names":[],"months":["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"],"expenses":[],"incomes":[]};
 const MONTHS=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+const MONTHS_GEN=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
 const MONTHS_SH=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const LS_KEY="raskhody_v1", LS_THEME="raskhody_theme";
-const APP_VERSION=("9".indexOf("__")===0?"dev":"9");
+const APP_VERSION=("10".indexOf("__")===0?"dev":"10");
 const PAL=["--c1","--c2","--c3","--c4","--c5","--c6","--c7","--c8"];
 
 /* ---------- utils ---------- */
@@ -358,7 +387,7 @@ function viewOverview(){
   let h=`<div class="kpis">
     <div class="tile pos"><div class="lbl">Доходы</div><div class="val tnum">${rub(inc)}</div></div>
     <div class="tile neg"><div class="lbl">Расходы</div><div class="val tnum">${rub(exp)}</div></div>
-    <div class="tile ${bal>=0?"pos":"neg"}"><div class="lbl">Баланс</div><div class="val tnum">${bal>=0?"":"−"}${rub(Math.abs(bal))}</div></div>
+    <div class="tile bal ${bal>=0?"pos":"neg"}"><div class="lbl">Баланс</div><div class="val tnum">${bal>=0?"":"−"}${rub(Math.abs(bal))}</div></div>
   </div>`;
   if(!tx.length)return h+`<div class="card"><div class="empty">За этот период нет операций.<br>Нажми «+», чтобы добавить первую.</div></div>`;
 
@@ -418,7 +447,7 @@ function donut(items,total){
 function monthlyChart(year){
   const inc=Array(12).fill(0),exp=Array(12).fill(0);
   DB.tx.forEach(t=>{if(pY(t.date)===year){const m=pM(t.date);if(t.type==="income")inc[m]+=t.amount;else exp[m]+=t.amount}});
-  const W=700,H=250,pl=46,pr=10,pt=12,pb=26, plotW=W-pl-pr, plotH=H-pt-pb;
+  const W=Math.round(Math.max(320,Math.min(700,innerWidth-64))),H=Math.round(W*0.42)+40,pl=46,pr=10,pt=12,pb=26, plotW=W-pl-pr, plotH=H-pt-pb;
   const mx=Math.max(...inc,...exp,1);
   const gw=plotW/12, bw=Math.min(gw*0.30,16);
   const y=val=>pt+plotH-(val/mx)*plotH;
@@ -431,7 +460,7 @@ function monthlyChart(year){
     const hi=plotH-(inc[m]/mx*plotH), he=plotH-(exp[m]/mx*plotH);
     if(inc[m]>0)bars+=`<rect x="${cx-bw-1.5}" y="${y(inc[m])}" width="${bw}" height="${Math.max(inc[m]/mx*plotH,0)}" rx="3" fill="var(--pos)" data-tip="<b>${MONTHS[m]}</b><br>Доходы ${rub(inc[m])}"></rect>`;
     if(exp[m]>0)bars+=`<rect x="${cx+1.5}" y="${y(exp[m])}" width="${bw}" height="${Math.max(exp[m]/mx*plotH,0)}" rx="3" fill="var(--neg)" data-tip="<b>${MONTHS[m]}</b><br>Расходы ${rub(exp[m])}"></rect>`;
-    bars+=`<text x="${cx}" y="${H-8}" text-anchor="middle">${MONTHS_SH[m]}</text>`;
+    bars+=`<text x="${cx}" y="${H-8}" text-anchor="middle">${gw<30?MONTHS_SH[m].charAt(0):MONTHS_SH[m]}</text>`;
   }
   return`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="График доходов и расходов по месяцам">
     ${g}<line class="baseline" x1="${pl}" y1="${pt+plotH}" x2="${W-pr}" y2="${pt+plotH}"></line>${bars}</svg>`;
@@ -457,7 +486,7 @@ function viewOps(){
     <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
       <input type="search" placeholder="Поиск по категории, комментарию…" value="${esc(f.q)}" data-ch="opq" id="opq"></div>
   </div>`;
-  h+=`<div class="card" style="padding:12px 15px"><div style="display:flex;justify-content:space-between;font-size:13px">
+  h+=`<div class="card" style="padding:12px 15px"><div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:13px">
       <span style="color:var(--ink-2)">${tx.length} ${plural(tx.length,"операция","операции","операций")}</span>
       <span class="tnum"><span style="color:var(--pos);font-weight:650">+${rub(inc)}</span> &nbsp; <span style="color:var(--neg);font-weight:650">−${rub(exp)}</span></span></div></div>`;
   if(!tx.length)return h+`<div class="card"><div class="empty">Ничего не найдено по текущим фильтрам.</div></div>`;
@@ -483,7 +512,7 @@ function viewOps(){
 }
 const validDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(String(s||""));
 const normDate=s=>{const m=String(s||"").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);return m?m[1]+"-"+m[2].padStart(2,"0")+"-"+m[3].padStart(2,"0"):""};
-function fullDate(s){if(!validDate(s))return "без даты";const d=new Date(pY(s),pM(s),+s.slice(8,10));const wd=["вс","пн","вт","ср","чт","пт","сб"][d.getDay()];return `${d.getDate()} ${(MONTHS[pM(s)]||"?").toLowerCase()} ${pY(s)}, ${wd}`}
+function fullDate(s){if(!validDate(s))return "без даты";const d=new Date(pY(s),pM(s),+s.slice(8,10));const wd=["вс","пн","вт","ср","чт","пт","сб"][d.getDay()];return `${d.getDate()} ${MONTHS_GEN[pM(s)]||"?"} ${pY(s)}, ${wd}`}
 function plural(n,a,b,c){n=Math.abs(n)%100;const n1=n%10;if(n>10&&n<20)return c;if(n1>1&&n1<5)return b;if(n1===1)return a;return c}
 
 /* ---------- catalog ---------- */
@@ -552,8 +581,8 @@ const icTrash=()=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
 
 /* ---------- modal / sheet ---------- */
 function openModal(html,center){const ov=$("#overlay");ov.classList.toggle("center",!!center);
-  $("#modal").innerHTML=html;ov.hidden=false;document.documentElement.style.overflow="hidden"}
-function closeModal(){$("#overlay").hidden=true;$("#modal").innerHTML="";document.documentElement.style.overflow=""}
+  $("#modal").innerHTML=html;ov.hidden=false;document.documentElement.classList.add("locked")}
+function closeModal(){$("#overlay").hidden=true;$("#modal").innerHTML="";document.documentElement.classList.remove("locked")}
 function confirmBox(msg,onYes,danger){
   openModal(`<div class="sheet-in"><h3>${esc(msg)}</h3><div class="btnrow">
     <button class="btn block" data-act="mClose">Отмена</button>
@@ -575,10 +604,11 @@ function openTxSheet(tx){
       <div class="seg" id="txType">
         <button data-v="expense" class="${t.type==="expense"?"on":""}">Расход</button>
         <button data-v="income" class="${t.type==="income"?"on":""}">Доход</button></div>
-      <div class="half">
-        <div><label>Сумма</label><div class="amtfield"><input class="in tnum" id="txAmt" inputmode="decimal" placeholder="0" value="${t.amount||""}"><span class="cur">₽</span></div></div>
-        <div><label>Дата</label><input class="in" id="txDate" type="date" value="${t.date}"></div>
-      </div>
+      <div><label>Сумма</label><div class="amtfield"><input class="in tnum" id="txAmt" inputmode="decimal" placeholder="0" value="${t.amount||""}"><span class="cur">₽</span></div></div>
+      <div><label>Дата</label><input type="hidden" id="txDate" value="${t.date}">
+        <div class="datebar"><button type="button" class="chipbtn" data-dq="0">Сегодня</button><button type="button" class="chipbtn" data-dq="1">Вчера</button>
+          <button type="button" class="chipbtn datebtn" id="dateBtn"><span id="dateLbl"></span></button></div>
+        <div class="cal" id="cal" hidden></div></div>
       <div><label>Категория</label><select class="in" id="txCat">${catOptions(t.type,t.category)}</select></div>
       <div><label>Кто</label><select class="in" id="txName">${nameOpts}</select></div>
       <div><label>Комментарий</label><textarea class="in" id="txComment" placeholder="необязательно">${esc(t.comment)}</textarea></div>
@@ -586,6 +616,7 @@ function openTxSheet(tx){
       ${edit?`<button class="btn danger ghost block" id="txDel">Удалить операцию</button>`:""}
       <button class="btn ghost block" data-act="mClose">Отмена</button>
     </div></div>`);
+  bindDatePicker();
   let type=t.type;
   $("#txType").querySelectorAll("button").forEach(b=>b.onclick=()=>{type=b.dataset.v;
     $("#txType").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
@@ -605,6 +636,30 @@ function openTxSheet(tx){
   };
   if(edit)$("#txDel").onclick=()=>confirmBox("Удалить эту операцию?",()=>{
     DB.tx=DB.tx.filter(x=>x.id!==tx.id);save();closeModal();render();toast("Удалено")},true);
+}
+/* календарь в форме операции: тап по дню выбирает дату и закрывает календарь, без «ОК» */
+function shortDate(s){if(!validDate(s))return "дата";const d=new Date(pY(s),pM(s),+s.slice(8,10));
+  return d.getDate()+" "+MONTHS_GEN[pM(s)]+(pY(s)!==new Date().getFullYear()?" "+pY(s):"")+", "+["вс","пн","вт","ср","чт","пт","сб"][d.getDay()]}
+function calHTML(y,m,sel){
+  const pad=n=>String(n).padStart(2,"0"),first=(new Date(y,m,1).getDay()+6)%7,n=new Date(y,m+1,0).getDate(),td=today();
+  let h=`<div class="cal-hd"><button type="button" data-nav="-1" aria-label="Предыдущий месяц">‹</button><span>${MONTHS[m]} ${y}</span><button type="button" data-nav="1" aria-label="Следующий месяц">›</button></div>
+    <div class="cal-grid">`+["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].map(w=>`<span class="wd">${w}</span>`).join("")+"<span></span>".repeat(first);
+  for(let d=1;d<=n;d++){const v=`${y}-${pad(m+1)}-${pad(d)}`;h+=`<button type="button" class="cd${v===sel?" on":""}${v===td?" td":""}" data-d="${v}">${d}</button>`}
+  return h+"</div>";
+}
+function bindDatePicker(){
+  const inp=$("#txDate"),cal=$("#cal");let vy,vm;
+  const dayAgo=k=>{const d=new Date();d.setDate(d.getDate()-k);return ymd(d)};
+  const paint=()=>{$("#dateLbl").textContent=shortDate(inp.value);let quick=false;
+    document.querySelectorAll("[data-dq]").forEach(b=>{const on=inp.value===dayAgo(+b.dataset.dq);b.classList.toggle("on",on);quick=quick||on});
+    $("#dateBtn").classList.toggle("on",!quick)};
+  const draw=()=>{cal.innerHTML=calHTML(vy,vm,inp.value)};
+  $("#dateBtn").onclick=()=>{if(cal.hidden){const v=validDate(inp.value)?inp.value:today();vy=pY(v);vm=pM(v);draw();cal.hidden=false}else cal.hidden=true};
+  cal.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if(b.dataset.nav){vm+=+b.dataset.nav;if(vm<0){vm=11;vy--}else if(vm>11){vm=0;vy++}draw();return}
+    if(b.dataset.d){inp.value=b.dataset.d;cal.hidden=true;paint()}};
+  document.querySelectorAll("[data-dq]").forEach(b=>b.onclick=()=>{inp.value=dayAgo(+b.dataset.dq);cal.hidden=true;paint()});
+  paint();
 }
 function openCatSheet(type,existing){
   const edit=!!existing, c=existing||{name:"",group:groupsFor(type)[0]||""};
@@ -681,14 +736,20 @@ function applyTheme(t){if(t==="dark"||t==="light")document.documentElement.setAt
     :`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A8 8 0 1 1 11.2 3a6 6 0 0 0 9.8 9.8z"/></svg>`}
 function curTheme(){try{return localStorage.getItem(LS_THEME)||"system"}catch(e){return"system"}}
 
-/* ---------- синхронизация с Google-таблицей (Apps Script) ---------- */
-let SYNC=null, syncStatus={state:"idle",msg:""}, autoTimer=null;
+/* ---------- синхронизация с Google-таблицей (Apps Script) ----------
+   Двусторонняя и автоматическая. BASE — последнее согласованное с таблицей состояние.
+   Локальные правки = разница DB и BASE. Цикл синка:
+   - правок нет → спрашиваем таблицу, изменилась ли она (knownRev), и если да — берём её данные;
+   - правки есть → отправляем DB; если таблицу успели поменять (conflict) — берём свежую таблицу,
+     накатываем на неё свои правки (сопоставляя операции по содержимому) и отправляем снова. */
+let SYNC=null, syncStatus={state:"idle",msg:""}, syncTimer=null, syncBusy=false, syncAgain=false;
+const SYNC_POLL_MS=45000;
 function loadSync(){try{return JSON.parse(localStorage.getItem("raskhody_sync")||"null")}catch(_){return null}}
 function persistSync(){try{SYNC?localStorage.setItem("raskhody_sync",JSON.stringify(SYNC)):localStorage.removeItem("raskhody_sync")}catch(_){}}
 function getRev(){try{return +(localStorage.getItem("raskhody_rev")||0)}catch(_){return 0}}
 function setRev(r){try{localStorage.setItem("raskhody_rev",String(r||0))}catch(_){}}
-function isDirty(){try{return localStorage.getItem("raskhody_dirty")==="1"}catch(_){return false}}
-function setDirty(v){try{v?localStorage.setItem("raskhody_dirty","1"):localStorage.removeItem("raskhody_dirty")}catch(_){}}
+function loadBase(){try{return JSON.parse(localStorage.getItem("raskhody_base")||"null")}catch(_){return null}}
+function setBase(d){try{d?localStorage.setItem("raskhody_base",JSON.stringify(d)):localStorage.removeItem("raskhody_base")}catch(_){}}
 function syncConfigured(){return !!(SYNC&&SYNC.url&&SYNC.token)}
 function setSync(state,msg){syncStatus={state,msg:msg||""};updateSyncCard()}
 function sanitizeDB(d){
@@ -709,48 +770,111 @@ async function syncApi(action,extra){
   const txt=await res.text();let j;
   try{j=JSON.parse(txt)}catch(e){throw new Error("неверный ответ (проверь URL и деплой)")}
   if(j.ok===false&&j.error==="bad token")throw new Error("неверный токен");
+  if(j.ok===false&&j.error!=="conflict")throw new Error(j.error||"ошибка");
   return j;
 }
-async function syncPull(){
-  const j=await syncApi("pull");
-  DB=sanitizeDB(j.data);save(true);setRev(j.rev);setDirty(false);
-  ui.year=years()[0];renderSelectors();render();
+
+/* разница локальных данных с BASE: операции сравниваются по id, справочники — целиком */
+const txKey=t=>[t.type,t.date,t.category,Math.round((+t.amount||0)*100),t.name||"",t.comment||""].join("\u0001");
+const catsKey=d=>JSON.stringify([d.expenseCats,d.incomeCats,d.names]);
+function localChanges(base,cur){
+  if(!base)return {ops:[],cats:false,unknown:true};
+  const bm=new Map(base.tx.map(t=>[t.id,t])), cm=new Map(cur.tx.map(t=>[t.id,t])), ops=[];
+  cur.tx.forEach(t=>{const b=bm.get(t.id);if(!b)ops.push({k:"add",after:t});else if(txKey(b)!==txKey(t)||b.group!==t.group)ops.push({k:"edit",before:b,after:t})});
+  base.tx.forEach(b=>{if(!cm.has(b.id))ops.push({k:"del",before:b})});
+  return {ops,cats:catsKey(base)!==catsKey(cur)};
 }
-async function syncPush(force){
-  const j=await syncApi("push",{data:DB,baseRev:getRev(),force:!!force});
-  if(j.ok===false&&j.error==="conflict")return {conflict:true};
-  if(j.ok===false)throw new Error(j.error||"ошибка");
-  setRev(j.rev);setDirty(false);return {ok:true};
+/* накатить свои правки на свежие данные таблицы */
+function rebase(remote,ch,cur){
+  const out=JSON.parse(JSON.stringify(remote));
+  const findIdx=b=>{const k=txKey(b);return out.tx.findIndex(t=>txKey(t)===k)};
+  ch.ops.forEach(op=>{
+    if(op.k==="add")out.tx.push(Object.assign({},op.after));
+    else if(op.k==="edit"){const i=findIdx(op.before);if(i>=0)out.tx[i]=Object.assign({},op.after,{id:out.tx[i].id});else out.tx.push(Object.assign({},op.after))}
+    else if(op.k==="del"){const i=findIdx(op.before);if(i>=0)out.tx.splice(i,1)}
+  });
+  if(ch.cats){out.expenseCats=cur.expenseCats;out.incomeCats=cur.incomeCats}
+  return out;
+}
+/* принять данные таблицы как согласованные; правки, сделанные во время запроса, накатываются сверху */
+function adopt(data,rev,sentSnapshot){
+  const remote=sanitizeDB(data);
+  let next=remote;
+  if(sentSnapshot&&JSON.stringify(DB)!==sentSnapshot){next=rebase(remote,localChanges(JSON.parse(sentSnapshot),DB),DB)}
+  DB=next;setBase(remote);setRev(rev);save(true);
+  if(!years().includes(ui.year))ui.year=years()[0];
+  safeRender();
+  return next!==remote;
+}
+/* перерисовка без потери открытого окна и фокуса в поиске */
+function safeRender(){
+  if(!$("#overlay").hidden)return;
+  const a=document.activeElement,id=a&&a.id,pos=a&&a.selectionStart;
+  renderSelectors();render();
+  if(id){const n=document.getElementById(id);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}}
+}
+
+async function syncCycle(){
+  if(!syncConfigured())return;
+  if(syncBusy){syncAgain=true;return}
+  syncBusy=true;
+  try{
+    do{syncAgain=false;await syncOnce()}while(syncAgain);
+    setSync("ok");
+  }catch(e){setSync("error",e.message)}
+  finally{syncBusy=false}
+}
+async function syncOnce(){
+  const base=loadBase();
+  const ch=localChanges(base,DB);
+  if(ch.unknown){ // ещё ни разу не синхронизировались на этом устройстве — источник правды таблица
+    const j=await syncApi("pull");adopt(j.data,j.rev);return;
+  }
+  if(!ch.ops.length&&!ch.cats){
+    if(!$("#overlay").hidden)return; // открыто окно — не дёргаем данные под рукой
+    const j=await syncApi("pull",{knownRev:getRev()});
+    if(!j.same)adopt(j.data,j.rev);
+    return;
+  }
+  setSync("syncing");
+  let payload=DB,baseRev=getRev();
+  for(let attempt=0;attempt<3;attempt++){
+    const sent=JSON.stringify(DB);
+    const j=await syncApi("push",{data:payload,baseRev});
+    if(j.ok!==false){
+      if(j.data){if(adopt(j.data,j.rev,sent))syncAgain=true}
+      else{setBase(JSON.parse(sent));setRev(j.rev)}
+      return;
+    }
+    // таблицу поменяли с другого устройства или руками — берём её и накатываем свои правки
+    const r=await syncApi("pull");
+    payload=rebase(sanitizeDB(r.data),localChanges(loadBase(),DB),DB);baseRev=r.rev;
+  }
+  throw new Error("таблица меняется слишком часто, попробую позже");
 }
 function scheduleSync(){
   if(!syncConfigured())return;
-  setDirty(true);if(syncStatus.state!=="error")setSync("dirty");
-  if(!SYNC.auto)return;
-  clearTimeout(autoTimer);autoTimer=setTimeout(runAutoPush,1600);
+  if(syncStatus.state!=="error")setSync("dirty");
+  clearTimeout(syncTimer);syncTimer=setTimeout(syncCycle,1200);
 }
-async function runAutoPush(){
+async function forcePull(){
+  try{setSync("syncing");const j=await syncApi("pull");setBase(null);adopt(j.data,j.rev);setSync("ok");toast("Загружено из таблицы")}
+  catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}
+}
+async function forcePush(){
+  try{setSync("syncing");const sent=JSON.stringify(DB);const j=await syncApi("push",{data:DB,force:true});
+    if(j.data)adopt(j.data,j.rev,sent);else{setBase(JSON.parse(sent));setRev(j.rev)}
+    setSync("ok");toast("Отправлено в таблицу")}
+  catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}
+}
+function startSyncLoop(){
   if(!syncConfigured())return;
-  try{setSync("syncing");const r=await syncPush(false);setSync(r&&r.conflict?"conflict":"ok")}
-  catch(e){setSync("error",e.message)}
+  syncCycle();
+  setInterval(()=>{if(document.visibilityState==="visible")syncCycle()},SYNC_POLL_MS);
 }
-async function syncNow(){
-  if(!syncConfigured())return toast("Синхронизация не настроена");
-  try{setSync("syncing");
-    if(isDirty()){const r=await syncPush(false);
-      if(r&&r.conflict){setSync("conflict");return openConflict()}
-      setSync("ok");toast("Отправлено в таблицу")}
-    else{await syncPull();setSync("ok");toast("Загружено из таблицы")}
-  }catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}
-}
-async function syncBoot(){
-  if(!syncConfigured())return;
-  try{setSync("syncing");const j=await syncApi("pull");
-    const remote=j.rev||0,base=getRev();
-    if(!isDirty()){DB=sanitizeDB(j.data);save(true);setRev(remote);ui.year=years()[0];renderSelectors();render();setSync("ok")}
-    else if(remote===base){await syncPush(true);setSync("ok")}
-    else setSync("conflict")
-  }catch(e){setSync("error",e.message)}
-}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")syncCycle()});
+window.addEventListener("online",()=>syncCycle());
+
 function updateSyncCard(){
   const el=$("#syncCard");if(!el)return;
   if(!syncConfigured()){
@@ -759,25 +883,24 @@ function updateSyncCard(){
     return;
   }
   const map={idle:["—","var(--muted)"],syncing:["синхронизация…","var(--ink-2)"],ok:["синхронизировано","var(--pos)"],
-    dirty:["есть изменения для отправки","var(--ink-2)"],conflict:["конфликт — нужно решить","var(--neg)"],error:["ошибка: "+syncStatus.msg,"var(--neg)"]};
+    dirty:["есть изменения для отправки","var(--ink-2)"],error:["ошибка: "+syncStatus.msg,"var(--neg)"]};
   const st=map[syncStatus.state]||map.idle;
   el.innerHTML=`<div class="statline"><span class="k">Статус</span><span class="v" style="color:${st[1]}">${esc(st[0])}</span></div>
-    <div class="statline"><span class="k">Автосинхронизация</span><span class="v">${SYNC.auto?"включена":"выключена"}</span></div>
+    <p class="hint">Синхронизация автоматическая: правки из приложения уходят в таблицу сразу, изменения в таблице подтягиваются при открытии и раз в минуту.</p>
     <div class="btnrow" style="margin-top:11px"><button class="btn primary block" data-act="syncNow">Синхронизировать сейчас</button>
       <button class="btn block" data-act="syncSettings">Настройки</button></div>
     <div class="btnrow" style="margin-top:9px">
       <button class="btn block" data-act="syncPullForce">Взять из таблицы</button>
       <button class="btn block" data-act="syncPushForce">Отправить в таблицу</button></div>
-    <p class="hint">«Взять из таблицы» заменит данные в приложении данными из таблицы. «Отправить в таблицу» — наоборот.</p>`;
+    <p class="hint">Кнопки снизу — на крайний случай: «Взять из таблицы» заменит данные в приложении данными из таблицы, «Отправить в таблицу» — наоборот.</p>`;
 }
 function openSyncSettings(){
-  const s=SYNC||{url:"",token:"",auto:true};
+  const s=SYNC||{url:"",token:""};
   openModal(`<div class="grab"></div><div class="sheet-in"><h3>Синхронизация с Google-таблицей</h3>
     <div class="frm">
       <p class="msg">Вставь URL веб-приложения Apps Script и свой токен. Хранятся только на этом устройстве.</p>
       <div><label>URL веб-приложения</label><input class="in" id="syUrl" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(s.url)}"></div>
       <div><label>Токен</label><input class="in" id="syTok" value="${esc(s.token)}"></div>
-      <label style="display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink-2)"><input type="checkbox" id="syAuto" ${s.auto!==false?"checked":""}> Синхронизировать автоматически при изменениях</label>
       <button class="btn block" id="syTest">Проверить подключение</button>
       <button class="btn primary block" id="sySave">Сохранить</button>
       ${syncConfigured()?`<button class="btn danger ghost block" id="syOff">Отключить синхронизацию</button>`:""}
@@ -785,26 +908,17 @@ function openSyncSettings(){
     </div></div>`);
   $("#syTest").onclick=async()=>{const url=$("#syUrl").value.trim(),token=$("#syTok").value.trim();
     if(!url||!token)return toast("Заполни URL и токен");
-    const prev=SYNC;SYNC={url,token,auto:true};
+    const prev=SYNC;SYNC={url,token};
     try{toast("Проверяю…");const j=await syncApi("ping");toast(j&&j.ok?"Подключение работает":"Ошибка: "+((j&&j.error)||"нет ok"))}
     catch(e){toast("Не удалось: "+e.message)}finally{SYNC=prev}};
   $("#sySave").onclick=()=>{const url=$("#syUrl").value.trim(),token=$("#syTok").value.trim();
     if(!url||!token)return toast("Заполни URL и токен");
-    SYNC={url,token,auto:$("#syAuto").checked};persistSync();closeModal();setSync("idle");render();
-    confirmBox("Взять данные из таблицы? Данные в приложении заменятся данными из таблицы.",async()=>{
-      try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}});};
-  if(syncConfigured())$("#syOff").onclick=()=>confirmBox("Отключить синхронизацию? Данные останутся на устройстве.",()=>{SYNC=null;persistSync();setDirty(false);closeModal();render();toast("Синхронизация отключена")},true);
-}
-function openConflict(){
-  openModal(`<div class="sheet-in"><h3>Конфликт синхронизации</h3>
-    <p class="msg warn">В таблице есть изменения с другого устройства, и здесь тоже есть несохранённые. Выбери, что оставить — другой вариант будет перезаписан.</p>
-    <div class="frm" style="margin-top:12px">
-      <button class="btn primary block" id="cfPull">Взять из таблицы</button>
-      <button class="btn block" id="cfPush">Отправить мои (перезаписать таблицу)</button>
-      <button class="btn ghost block" data-act="mClose">Решить позже</button>
-    </div></div>`,true);
-  $("#cfPull").onclick=async()=>{closeModal();try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message)}};
-  $("#cfPush").onclick=async()=>{closeModal();try{setSync("syncing");await syncPush(true);setSync("ok");toast("Отправлено в таблицу")}catch(e){setSync("error",e.message)}};
+    const was=syncConfigured();
+    SYNC={url,token};persistSync();closeModal();render();
+    // новое подключение: источник правды — таблица, её данные и берём
+    if(!was){setBase(null);forcePull().then(startSyncLoop)}else syncCycle();
+  };
+  if(syncConfigured())$("#syOff").onclick=()=>confirmBox("Отключить синхронизацию? Данные останутся на устройстве.",()=>{SYNC=null;persistSync();setBase(null);closeModal();render();toast("Синхронизация отключена")},true);
 }
 
 /* ---------- global events ---------- */
@@ -812,7 +926,7 @@ document.addEventListener("click",e=>{try{onAct(e)}catch(err){console.error(err)
 function onAct(e){
   const a=e.target.closest("[data-act]");if(!a)return;
   const act=a.dataset.act;
-  if(act==="nav"){ui.tab=a.dataset.tab;document.documentElement.style.overflow="";render();window.scrollTo(0,0)}
+  if(act==="nav"){ui.tab=a.dataset.tab;closeModal();render();window.scrollTo(0,0)}
   else if(act==="theme"){let t=curTheme();t=t==="dark"?"light":t==="light"?"system":"dark";try{localStorage.setItem(LS_THEME,t)}catch(_){}applyTheme(t);if(ui.tab==="overview")render();toast(t==="dark"?"Тёмная тема":t==="light"?"Светлая тема":"Как в системе")}
   else if(act==="openAdd")openTxSheet(null);
   else if(act==="editTx"){const t=DB.tx.find(x=>x.id===a.dataset.id);if(t)openTxSheet(t)}
@@ -833,9 +947,9 @@ function onAct(e){
   else if(act==="resetSeed")confirmBox("Вернуть исходные данные из Excel? Текущие изменения будут потеряны.",()=>{DB=seedDB();save();ui.year=years()[0];ui.month="all";renderSelectors();render();toast("Сброшено к исходным")},true);
   else if(act==="clearTx")confirmBox("Удалить все операции? Категории и люди останутся.",()=>{DB.tx=[];save();render();toast("Операции удалены")},true);
   else if(act==="syncSettings")openSyncSettings();
-  else if(act==="syncNow")syncNow();
-  else if(act==="syncPullForce")confirmBox("Заменить данные в приложении данными из таблицы?",()=>{(async()=>{try{setSync("syncing");await syncPull();setSync("ok");toast("Загружено из таблицы")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}})()});
-  else if(act==="syncPushForce")confirmBox("Перезаписать таблицу данными из приложения?",()=>{(async()=>{try{setSync("syncing");await syncPush(true);setSync("ok");toast("Отправлено в таблицу")}catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}})()},true);
+  else if(act==="syncNow"){if(!syncConfigured())toast("Синхронизация не настроена");else syncCycle().then(()=>toast(syncStatus.state==="ok"?"Синхронизировано":"Ошибка: "+syncStatus.msg))}
+  else if(act==="syncPullForce")confirmBox("Заменить данные в приложении данными из таблицы?",forcePull);
+  else if(act==="syncPushForce")confirmBox("Перезаписать таблицу данными из приложения?",forcePush,true);
 }
 $("#overlay").addEventListener("click",e=>{if(e.target===$("#overlay"))closeModal()});
 document.addEventListener("change",e=>{
@@ -871,7 +985,7 @@ try{$("#verLbl").textContent="v"+APP_VERSION}catch(_){}
 renderSelectors();
 render();
 SYNC=loadSync();
-syncBoot();
+startSyncLoop();
 
 if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(()=>{})}
 if("serviceWorker" in navigator){const hadSW=!!navigator.serviceWorker.controller;let swReloaded=false;navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadSW&&!swReloaded){swReloaded=true;location.reload()}});window.addEventListener("load",()=>{navigator.serviceWorker.register("service-worker.js").catch(()=>{})})}

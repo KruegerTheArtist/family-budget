@@ -54,13 +54,19 @@ function doPost(e) {
     var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (req.token !== SECRET) return out_({ ok: false, error: 'bad token' });
     if (req.action === 'ping') return out_({ ok: true, sheet: ss_().getName() });
-    if (req.action === 'pull') { var data = readAll_(); return out_({ ok: true, rev: revOf_(data), data: data }); }
+    if (req.action === 'pull') {
+      var data = readAll_(), rev = revOf_(data);
+      // приложение опрашивает таблицу регулярно: если ничего не менялось, данные не пересылаем
+      if (req.knownRev === rev) return out_({ ok: true, rev: rev, same: true });
+      return out_({ ok: true, rev: rev, data: data });
+    }
     if (req.action === 'push') {
       var cur = revOf_(readAll_());
       if (req.baseRev !== cur && !req.force) return out_({ ok: false, error: 'conflict', rev: cur });
       writeAll_(req.data || {});
       SpreadsheetApp.flush();
-      return out_({ ok: true, rev: revOf_(readAll_()) });
+      var saved = readAll_(); // отдаём таблицу как она есть после записи: id строк, группы из формул
+      return out_({ ok: true, rev: revOf_(saved), data: saved });
     }
     return out_({ ok: false, error: 'unknown action' });
   } catch (err) {
