@@ -13,7 +13,13 @@
  * Сводки, месячные листы и всё правее таблиц скрипт не трогает.
  *
  * Ревизия (rev) — хэш содержимого таблиц: правка руками прямо в Google-таблице тоже меняет rev,
- * и приложение не перезапишет её молча, а покажет конфликт.
+ * и приложение не перезапишет её молча, а сначала заберёт её и накатит свои правки сверху.
+ *
+ * Надёжность записи:
+ *  - если запись оборвалась посередине, всё изменённое возвращается в прежний вид (иначе приложение
+ *    приняло бы полупустую таблицу за истину);
+ *  - каждая отправка приложения имеет номер (pushId), применённые номера запоминаются в свойствах скрипта:
+ *    если ответ не дошёл до телефона, приложение спросит судьбу отправки и не задвоит операции.
  *
  * Установка:
  *  1. Открой свой Apps Script проект (script.google.com → Мои проекты).
@@ -49,22 +55,30 @@ var SPEC_INC = {
 /* ---------- HTTP ---------- */
 function doPost(e) {
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(20000); } catch (err) {}
+  // без блокировки не работаем: параллельная запись или чтение посреди чужой записи отдали бы полупустую таблицу
+  try { lock.waitLock(20000); } catch (err) { return out_({ ok: false, error: 'таблица занята, попробую позже' }); }
   try {
     var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (req.token !== SECRET) return out_({ ok: false, error: 'bad token' });
     if (req.action === 'ping') return out_({ ok: true, sheet: ss_().getName() });
     if (req.action === 'pull') {
-      var data = readAll_(), rev = revOf_(data);
+      var data = readAll_(), rev = revOf_(data), res = { ok: true, rev: rev };
+      // приложение не получило ответ на отправку и спрашивает, была ли она применена
+      if (req.askPush) res.applied = applied_(req.askPush);
       // приложение опрашивает таблицу регулярно: если ничего не менялось, данные не пересылаем
-      if (req.knownRev === rev) return out_({ ok: true, rev: rev, same: true });
-      return out_({ ok: true, rev: rev, data: data });
+      if (req.knownRev === rev) res.same = true; else res.data = data;
+      return out_(res);
     }
     if (req.action === 'push') {
+      if (req.pushId && applied_(req.pushId)) { // повтор уже применённой отправки второй раз не записываем
+        var now = readAll_();
+        return out_({ ok: true, rev: revOf_(now), data: now, replay: true });
+      }
       var cur = revOf_(readAll_());
       if (req.baseRev !== cur && !req.force) return out_({ ok: false, error: 'conflict', rev: cur });
       writeAll_(req.data || {});
       SpreadsheetApp.flush();
+      if (req.pushId) markApplied_(req.pushId);
       var saved = readAll_(); // отдаём таблицу как она есть после записи: id строк, группы из формул
       return out_({ ok: true, rev: revOf_(saved), data: saved });
     }
@@ -78,6 +92,21 @@ function doPost(e) {
 function doGet() { return out_({ ok: true, info: 'budget sync alive' }); }
 function out_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* ---------- журнал применённых отправок ---------- */
+var LEDGER_KEY = 'appliedPushes', LEDGER_MAX = 40;
+function ledger_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(LEDGER_KEY) || '[]'); } catch (e) { return []; }
+}
+function applied_(id) { return ledger_().indexOf(String(id)) >= 0; }
+/** Сбой журнала не должен ронять уже выполненную запись — в худшем случае приложение повторит отправку. */
+function markApplied_(id) {
+  try {
+    var l = ledger_();
+    l.push(String(id));
+    PropertiesService.getScriptProperties().setProperty(LEDGER_KEY, JSON.stringify(l.slice(-LEDGER_MAX)));
+  } catch (e) {}
 }
 
 /* ---------- таблица / ревизия ---------- */
@@ -163,11 +192,14 @@ function readTable_(s, spec, groups, out) {
     var g = c.group != null ? r[c.group] : groups[cat];
     if (g == null && L.groupCol >= 0) g = r[L.groupCol];
     g = String(g || '').trim();
-    out.push({
-      id: spec.prefix + (i + 2), type: spec.type, date: toYMD_(r[c.date]),
+    var rawDate = r[c.date], t = {
+      id: spec.prefix + (i + 2), type: spec.type, date: toYMD_(rawDate),
       name: String(r[c.name] || '').trim(), group: g.charAt(0) === '#' ? '' : g, category: cat,
       amount: amount, comment: String(r[c.comment] || '').trim()
-    });
+    };
+    // дату не распознали — отдаём содержимое ячейки как есть: приложение вернёт его при записи, а не сотрёт
+    if (!t.date && rawDate !== '' && rawDate != null) t.rawDate = String(rawDate);
+    out.push(t);
   });
 }
 function readPairs_(s, c1) {
@@ -185,30 +217,55 @@ function readCol_(s, c) {
 
 /* ---------- запись (только колонки ввода; формулы протягиваются, сводки не трогаем) ---------- */
 function writeAll_(db) {
-  var ss = ss_(), tx = db.tx || [];
-  // порядок строк — как в приложении: после «Взять из таблицы» он совпадает с таблицей, новые операции в конце
-  writeTable_(sheet_(ss, SH_EXP), SPEC_EXP, tx.filter(function (t) { return t.type !== 'income'; }));
-  writeTable_(sheet_(ss, SH_INC), SPEC_INC, tx.filter(function (t) { return t.type === 'income'; }));
+  var ss = ss_(), tx = db.tx || [], undo = [];
+  try {
+    // порядок строк — как в приложении: после «Взять из таблицы» он совпадает с таблицей, новые операции в конце
+    writeTable_(sheet_(ss, SH_EXP), SPEC_EXP, tx.filter(function (t) { return t.type !== 'income'; }), undo);
+    writeTable_(sheet_(ss, SH_INC), SPEC_INC, tx.filter(function (t) { return t.type === 'income'; }), undo);
 
-  var d = sheet_(ss, SH_DATA);
-  var ec = db.expenseCats || [], ic = db.incomeCats || [];
-  var groups = []; ec.forEach(function (c) { if (c.group && groups.indexOf(c.group) < 0) groups.push(c.group); });
-  writeCol_(d, 1, groups);                                              // A: группы расходов
-  writeCol_(d, 2, ec.map(function (c) { return c.name; }));               // B: категории расходов
-  // C (имена) не пишем: список имён ведётся в самой таблице (выпадающий список колонки «Имя»)
-  writeCols_(d, 10, ec.map(function (c) { return [c.name, c.group]; }));   // J:K
-  writeCols_(d, 16, ic.map(function (c) { return [c.name, c.group]; }));   // P:Q
+    var d = sheet_(ss, SH_DATA);
+    var ec = db.expenseCats || [], ic = db.incomeCats || [];
+    var groups = []; ec.forEach(function (c) { if (c.group && groups.indexOf(c.group) < 0) groups.push(c.group); });
+    writeBlock_(d, 1, 1, groups.map(function (g) { return [g]; }), undo);           // A: группы расходов
+    writeBlock_(d, 2, 1, ec.map(function (c) { return [c.name]; }), undo);          // B: категории расходов
+    // C (имена) не пишем: список имён ведётся в самой таблице (выпадающий список колонки «Имя»)
+    writeBlock_(d, 10, 2, ec.map(function (c) { return [c.name, c.group]; }), undo); // J:K
+    writeBlock_(d, 16, 2, ic.map(function (c) { return [c.name, c.group]; }), undo); // P:Q
+  } catch (err) {
+    // запись оборвалась посередине: возвращаем всё изменённое в обратном порядке и отдаём ошибку приложению
+    for (var i = undo.length - 1; i >= 0; i--) { try { undo[i](); } catch (e2) {} }
+    throw err;
+  }
 }
-function writeTable_(s, spec, items) {
+/** Запоминает диапазон (формулы — как формулы) и возвращает функцию, которая вернёт его в прежний вид. */
+function keep_(rg) {
+  var v = rg.getValues(), f = rg.getFormulas();
+  for (var i = 0; i < v.length; i++) for (var j = 0; j < v[i].length; j++) if (f[i][j]) v[i][j] = f[i][j];
+  return function () { rg.setValues(v); };
+}
+function writeTable_(s, spec, items, undo) {
   var L = layout_(s, spec), n = items.length, last = s.getLastRow();
-  var fields = Object.keys(L.cols);
+  var fields = Object.keys(L.cols), touched = [], bv = [], bf = [];
+  // откат: изменённым колонкам возвращается прежнее содержимое (формулы — формулами),
+  // строки, дописанные ниже прежнего конца таблицы, очищаются; чужие колонки не трогаем
+  if (last > 1) { var blk = s.getRange(2, 1, last - 1, L.width); bv = blk.getValues(); bf = blk.getFormulas(); }
+  undo.push(function () {
+    touched.forEach(function (c) {
+      try {
+        if (n > last - 1) s.getRange(Math.max(last, 1) + 1, c + 1, n - Math.max(last - 1, 0), 1).clearContent();
+        if (last > 1) s.getRange(2, c + 1, last - 1, 1).setValues(bv.map(function (r, i) { return [bf[i][c] || r[c]]; }));
+      } catch (e) {}
+    });
+  });
+  fields.forEach(function (f) { touched.push(L.cols[f]); });
+
   if (last > 1) fields.forEach(function (f) { s.getRange(2, L.cols[f] + 1, last - 1, 1).clearContent(); });
   if (!n) return;
 
   fields.forEach(function (f) {
     var vals = items.map(function (t) {
       if (f === 'amount') return [Number(t.amount) || 0];
-      if (f === 'date') return [fromYMD_(t.date)];
+      if (f === 'date') return [fromYMD_(t.date) || t.rawDate || '']; // нераспознанную дату возвращаем как была
       return [t[f] || ''];
     });
     // формат не задаём: в «Таблице» Google колонка «Дата» типизирована, и setNumberFormat там запрещён
@@ -220,17 +277,18 @@ function writeTable_(s, spec, items) {
   for (var c = 0; c < L.width; c++) {
     if (fields.some(function (f) { return L.cols[f] === c; })) continue;
     var rg2 = s.getRange(2, c + 1, n, 1);
-    if (r1c1[c]) rg2.setFormulasR1C1(items.map(function () { return [r1c1[c]]; }));
-    else if (c === L.noCol) rg2.setValues(items.map(function (t, i) { return [i + 1]; }));
+    if (r1c1[c]) { touched.push(c); rg2.setFormulasR1C1(items.map(function () { return [r1c1[c]]; })); }
+    else if (c === L.noCol) { touched.push(c); rg2.setValues(items.map(function (t, i) { return [i + 1]; })); }
   }
 }
-function writeCol_(s, col, arr) {
-  var last = s.getLastRow();
-  if (last > 1) s.getRange(2, col, last - 1, 1).clearContent();
-  if (arr.length) s.getRange(2, col, arr.length, 1).setValues(arr.map(function (v) { return [v]; }));
-}
-function writeCols_(s, col, rows) {
-  var last = s.getLastRow();
-  if (last > 1) s.getRange(2, col, last - 1, 2).clearContent();
-  if (rows.length) s.getRange(2, col, rows.length, 2).setValues(rows);
+/** Справочник на листе «Данные»: колонки col..col+width-1 со второй строки заменяются на rows. */
+function writeBlock_(s, col, width, rows, undo) {
+  var last = s.getLastRow(), n = rows.length;
+  if (n > last - 1) undo.push(function () { s.getRange(Math.max(last, 1) + 1, col, n - Math.max(last - 1, 0), width).clearContent(); });
+  if (last > 1) {
+    var old = s.getRange(2, col, last - 1, width);
+    undo.push(keep_(old));
+    old.clearContent();
+  }
+  if (n) s.getRange(2, col, n, width).setValues(rows);
 }

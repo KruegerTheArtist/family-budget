@@ -315,7 +315,8 @@ const MONTHS=["Январь","Февраль","Март","Апрель","Май"
 const MONTHS_GEN=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
 const MONTHS_SH=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const LS_KEY="raskhody_v1", LS_THEME="raskhody_theme";
-const APP_VERSION=("10".indexOf("__")===0?"dev":"10");
+const APP_VERSION=("11".indexOf("__")===0?"dev":"11");
+const HAS_SEED=SEED_RAW.expenses.length+SEED_RAW.incomes.length>0; // в публичной сборке исходных операций нет — только категории
 const PAL=["--c1","--c2","--c3","--c4","--c5","--c6","--c7","--c8"];
 
 /* ---------- utils ---------- */
@@ -470,13 +471,18 @@ function monthlyChart(year){
 function viewOps(){
   let tx=periodTx();
   const f=ui.op;
+  // в списках фильтров — и справочник, и то, что реально встречается в операциях (имя могли убрать из таблицы)
+  const allNames=[...new Set([...DB.names,...DB.tx.map(t=>t.name).filter(Boolean)])];
+  const allGroups=[...new Set([...groupsFor("expense"),...groupsFor("income"),...DB.tx.map(t=>t.group).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,"ru"));
+  // фильтр не должен молча держать значение, которого больше нет (группу переименовали, имя пропало)
+  if(f.name!=="all"&&!allNames.includes(f.name))f.name="all";
+  if(f.group!=="all"&&!allGroups.includes(f.group))f.group="all";
   if(f.type!=="all")tx=tx.filter(t=>t.type===f.type);
   if(f.name!=="all")tx=tx.filter(t=>t.name===f.name);
   if(f.group!=="all")tx=tx.filter(t=>t.group===f.group);
   if(f.q){const q=f.q.toLowerCase();tx=tx.filter(t=>(t.category+" "+t.group+" "+t.comment+" "+t.name).toLowerCase().includes(q))}
   tx.sort((a,b)=>b.date<a.date?-1:b.date>a.date?1:0);
   const inc=sum(tx.filter(t=>t.type==="income")),exp=sum(tx.filter(t=>t.type==="expense"));
-  const allNames=DB.names, allGroups=[...new Set([...groupsFor("expense"),...groupsFor("income")])].sort((a,b)=>a.localeCompare(b,"ru"));
   let h=`<div class="filters">
     <div class="seg" data-ch="optype">
       ${[["all","Все"],["expense","Расходы"],["income","Доходы"]].map(([v,l])=>`<button data-v="${v}" class="${f.type===v?"on":""}">${l}</button>`).join("")}
@@ -520,12 +526,14 @@ function viewCatalog(){
   let h="";
   h+=catalogSection("expense","Категории расходов");
   h+=catalogSection("income","Категории доходов");
-  // people
+  // people: при синхронизации список имён ведётся в таблице (выпадающий список колонки «Имя»), здесь он только для просмотра
+  const viaSheet=syncConfigured();
   h+=`<div class="card"><h2>Люди</h2>`;
   DB.names.forEach(n=>{const cnt=DB.tx.filter(t=>t.name===n).length;
     h+=`<div class="catitem"><span class="nm">${esc(n)}</span><span class="cnt">${cnt}</span>
-      <button class="mini danger" data-act="delPerson" data-name="${esc(n)}" aria-label="Удалить">${icTrash()}</button></div>`});
-  h+=`<div class="addcat"><input id="newPerson" placeholder="Новое имя" maxlength="30">
+      ${viaSheet?"":`<button class="mini danger" data-act="delPerson" data-name="${esc(n)}" aria-label="Удалить">${icTrash()}</button>`}</div>`});
+  h+=viaSheet?`<p class="hint">Имена берутся из выпадающего списка колонки «Имя» в Google-таблице — добавляй и убирай их там.</p></div>`
+    :`<div class="addcat"><input id="newPerson" placeholder="Новое имя" maxlength="30">
       <button class="btn primary sm" data-act="addPerson">Добавить</button></div></div>`;
   return h;
 }
@@ -569,9 +577,9 @@ function viewData(){
       <button class="btn block" data-act="importOpen">Восстановить из бэкапа</button></div></div>`;
   h+=`<div class="card"><h2>Синхронизация с Google-таблицей</h2><div id="syncCard"></div></div>`;
   h+=`<div class="card"><h2>Сброс</h2>
-    <div class="btnrow"><button class="btn block" data-act="resetSeed">Вернуть исходные данные</button>
+    <div class="btnrow">${HAS_SEED?`<button class="btn block" data-act="resetSeed">Вернуть исходные данные</button>`:""}
       <button class="btn danger block" data-act="clearTx">Удалить все операции</button></div>
-    <p class="hint">«Вернуть исходные» — загрузит данные из твоего Excel заново. «Удалить все операции» — очистит операции, но оставит категории и людей.</p></div>`;
+    <p class="hint">${HAS_SEED?"«Вернуть исходные» — загрузит данные из твоего Excel заново. ":""}«Удалить все операции» — очистит операции, но оставит категории и людей.${syncConfigured()?" Синхронизация включена: операции удалятся и из Google-таблицы.":""}</p></div>`;
   return h;
 }
 
@@ -582,7 +590,9 @@ const icTrash=()=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
 /* ---------- modal / sheet ---------- */
 function openModal(html,center){const ov=$("#overlay");ov.classList.toggle("center",!!center);
   $("#modal").innerHTML=html;ov.hidden=false;document.documentElement.classList.add("locked")}
-function closeModal(){$("#overlay").hidden=true;$("#modal").innerHTML="";document.documentElement.classList.remove("locked")}
+let renderPending=false; // пока окно было открыто, данные обновились синком — перерисовать при закрытии
+function closeModal(){$("#overlay").hidden=true;$("#modal").innerHTML="";document.documentElement.classList.remove("locked");
+  if(renderPending){renderPending=false;renderSelectors();render()}}
 function confirmBox(msg,onYes,danger){
   openModal(`<div class="sheet-in"><h3>${esc(msg)}</h3><div class="btnrow">
     <button class="btn block" data-act="mClose">Отмена</button>
@@ -594,10 +604,19 @@ function catOptions(type,sel){
   return groups.map(g=>`<optgroup label="${esc(g)}">`+catsFor(type).filter(c=>c.group===g)
     .map(c=>`<option${c.name===sel?" selected":""}>${esc(c.name)}</option>`).join("")+`</optgroup>`).join("");
 }
+/* список категорий для формы: без выбранной — пустой пункт (чтобы первая категория не подставлялась молча);
+   категория, которой нет в справочнике (удалена или пришла из таблицы), показывается как есть — сохранение её не подменит */
+function catSelect(type,sel){
+  const known=catsFor(type).some(c=>c.name===sel);
+  return (sel?"":`<option value="">— выбери категорию —</option>`)+
+    (sel&&!known?`<option selected>${esc(sel)}</option>`:"")+catOptions(type,sel);
+}
 function openTxSheet(tx){
   const edit=!!tx;
   const t=tx||{type:"expense",date:today(),amount:"",name:DB.names[0]||"",category:"",comment:""};
-  const nameOpts=`<option value="">— без имени —</option>`+DB.names.map(n=>`<option${n===t.name?" selected":""}>${esc(n)}</option>`).join("");
+  // имя операции, которого уже нет в списке, тоже остаётся в выборе — иначе правка любого поля стирала бы его
+  const names=t.name&&!DB.names.includes(t.name)?[t.name,...DB.names]:DB.names;
+  const nameOpts=`<option value="">— без имени —</option>`+names.map(n=>`<option${n===t.name?" selected":""}>${esc(n)}</option>`).join("");
   openModal(`<div class="grab"></div><div class="sheet-in">
     <h3>${edit?"Операция":"Новая операция"}</h3>
     <div class="frm">
@@ -609,7 +628,7 @@ function openTxSheet(tx){
         <div class="datebar"><button type="button" class="chipbtn" data-dq="0">Сегодня</button><button type="button" class="chipbtn" data-dq="1">Вчера</button>
           <button type="button" class="chipbtn datebtn" id="dateBtn"><span id="dateLbl"></span></button></div>
         <div class="cal" id="cal" hidden></div></div>
-      <div><label>Категория</label><select class="in" id="txCat">${catOptions(t.type,t.category)}</select></div>
+      <div><label>Категория</label><select class="in" id="txCat">${catSelect(t.type,t.category)}</select></div>
       <div><label>Кто</label><select class="in" id="txName">${nameOpts}</select></div>
       <div><label>Комментарий</label><textarea class="in" id="txComment" placeholder="необязательно">${esc(t.comment)}</textarea></div>
       <button class="btn primary block" id="txSave" style="margin-top:4px">${edit?"Сохранить":"Добавить"}</button>
@@ -620,21 +639,26 @@ function openTxSheet(tx){
   let type=t.type;
   $("#txType").querySelectorAll("button").forEach(b=>b.onclick=()=>{type=b.dataset.v;
     $("#txType").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
-    $("#txCat").innerHTML=catOptions(type,"")});
+    $("#txCat").innerHTML=catSelect(type,type===t.type?t.category:"")});
+  // операцию могли изменить или удалить в таблице, пока форма была открыта: тогда её id в данных уже нет
+  const gone=()=>{closeModal();render();toast("Операция изменилась на другом устройстве — открой её заново")};
   $("#txSave").onclick=()=>{
     const amount=parseFloat(String($("#txAmt").value).replace(/\s/g,"").replace(",","."));
     const category=$("#txCat").value, date=$("#txDate").value;
     if(!(amount>0))return toast("Введите сумму");
     if(!category)return toast("Выберите категорию");
     if(!date)return toast("Укажите дату");
-    const rec={id:edit?tx.id:uid(),type,date,amount,category,group:catGroup(type,category),
+    // у категории вне справочника группу взять неоткуда — оставляем прежнюю, если категорию не меняли
+    const rec={id:edit?tx.id:uid(),type,date,amount,category,
+      group:catGroup(type,category)||(edit&&type===tx.type&&category===tx.category?tx.group:""),
       name:$("#txName").value,comment:$("#txComment").value.trim()};
-    if(edit){const i=DB.tx.findIndex(x=>x.id===tx.id);DB.tx[i]=rec}else DB.tx.push(rec);
+    if(edit){const i=DB.tx.findIndex(x=>x.id===tx.id);if(i<0)return gone();DB.tx[i]=rec}else DB.tx.push(rec);
     save();closeModal();if(!edit&&ui.month!=="all"&&pM(date)!==ui.month)ui.month="all";
     if(pY(date)!==ui.year&&!edit)ui.year=pY(date);
     renderSelectors();render();toast(edit?"Сохранено":"Добавлено");
   };
   if(edit)$("#txDel").onclick=()=>confirmBox("Удалить эту операцию?",()=>{
+    if(!DB.tx.some(x=>x.id===tx.id))return gone();
     DB.tx=DB.tx.filter(x=>x.id!==tx.id);save();closeModal();render();toast("Удалено")},true);
 }
 /* календарь в форме операции: тап по дню выбирает дату и закрывает календарь, без «ОК» */
@@ -741,8 +765,11 @@ function curTheme(){try{return localStorage.getItem(LS_THEME)||"system"}catch(e)
    Локальные правки = разница DB и BASE. Цикл синка:
    - правок нет → спрашиваем таблицу, изменилась ли она (knownRev), и если да — берём её данные;
    - правки есть → отправляем DB; если таблицу успели поменять (conflict) — берём свежую таблицу,
-     накатываем на неё свои правки (сопоставляя операции по содержимому) и отправляем снова. */
-let SYNC=null, syncStatus={state:"idle",msg:""}, syncTimer=null, syncBusy=false, syncAgain=false;
+     накатываем на неё свои правки (сопоставляя операции по содержимому) и отправляем снова.
+   id операций раздаёт приложение (см. keepIds): таблица знает только номера строк, а они съезжают.
+   PENDING — отправка, ответ на которую ещё не получен: если связь оборвалась, сначала выясняем у скрипта,
+   дошла ли она, и только потом считаем правки — иначе они уехали бы второй раз. */
+let SYNC=null, syncStatus={state:"idle",msg:""}, syncTimer=null, syncBusy=false, syncAgain=false, syncLoopT=null;
 const SYNC_POLL_MS=45000;
 function loadSync(){try{return JSON.parse(localStorage.getItem("raskhody_sync")||"null")}catch(_){return null}}
 function persistSync(){try{SYNC?localStorage.setItem("raskhody_sync",JSON.stringify(SYNC)):localStorage.removeItem("raskhody_sync")}catch(_){}}
@@ -750,14 +777,18 @@ function getRev(){try{return +(localStorage.getItem("raskhody_rev")||0)}catch(_)
 function setRev(r){try{localStorage.setItem("raskhody_rev",String(r||0))}catch(_){}}
 function loadBase(){try{return JSON.parse(localStorage.getItem("raskhody_base")||"null")}catch(_){return null}}
 function setBase(d){try{d?localStorage.setItem("raskhody_base",JSON.stringify(d)):localStorage.removeItem("raskhody_base")}catch(_){}}
+function loadPending(){try{return JSON.parse(localStorage.getItem("raskhody_pending")||"null")}catch(_){return null}}
+function setPending(p){try{p?localStorage.setItem("raskhody_pending",JSON.stringify(p)):localStorage.removeItem("raskhody_pending")}catch(_){}}
 function syncConfigured(){return !!(SYNC&&SYNC.url&&SYNC.token)}
 function setSync(state,msg){syncStatus={state,msg:msg||""};updateSyncCard()}
 function sanitizeDB(d){
   if(!d||!Array.isArray(d.tx))throw new Error("плохие данные");
   return {v:1,
-    tx:d.tx.map(t=>({id:String(t.id||uid()),type:t.type==="income"?"income":"expense",
+    tx:d.tx.map(t=>{const o={id:String(t.id||uid()),type:t.type==="income"?"income":"expense",
       date:normDate(t.date),name:t.name||"",group:t.group||"",
-      category:t.category||"",amount:+t.amount||0,comment:t.comment||""})),
+      category:t.category||"",amount:+t.amount||0,comment:t.comment||""};
+      if(!o.date&&t.rawDate)o.rawDate=String(t.rawDate); // дату не распознали — храним как в таблице, чтобы вернуть её при записи
+      return o}),
     expenseCats:(Array.isArray(d.expenseCats)?d.expenseCats:[]).map(c=>({name:String(c.name||""),group:String(c.group||"")})).filter(c=>c.name),
     incomeCats:(Array.isArray(d.incomeCats)?d.incomeCats:[]).map(c=>({name:String(c.name||""),group:String(c.group||"")})).filter(c=>c.name),
     names:(Array.isArray(d.names)?d.names:[]).map(String)};
@@ -773,10 +804,29 @@ async function syncApi(action,extra){
   if(j.ok===false&&j.error!=="conflict")throw new Error(j.error||"ошибка");
   return j;
 }
+/* отправка в таблицу: до ответа считается «в пути». Исключение (обрыв связи) оставляет PENDING —
+   судьбу такой отправки следующий цикл узнает у скрипта */
+async function pushApi(data,sent,extra){
+  const pushId=uid();
+  setPending({id:pushId,snap:JSON.parse(sent)});
+  const j=await syncApi("push",Object.assign({data,pushId},extra));
+  setPending(null);
+  return j;
+}
 
-/* разница локальных данных с BASE: операции сравниваются по id, справочники — целиком */
+/* разница локальных данных с BASE: операции сравниваются по id, справочники — целиком.
+   Имена в сравнение не входят: в таблицу они не пишутся, список ведётся в ней самой */
 const txKey=t=>[t.type,t.date,t.category,Math.round((+t.amount||0)*100),t.name||"",t.comment||""].join("\u0001");
-const catsKey=d=>JSON.stringify([d.expenseCats,d.incomeCats,d.names]);
+const catsKey=d=>JSON.stringify([d.expenseCats,d.incomeCats]);
+/* Таблица присылает id по номеру строки — после любой вставки или удаления они достаются другим операциям.
+   Поэтому строки таблицы сопоставляются с уже известными операциями по содержимому и получают их id,
+   остальные — новый. Так id не меняется, пока не изменилась сама операция, и открытая форма правит именно её. */
+function keepIds(remote,ref){
+  const pool=new Map();
+  ref.tx.forEach(t=>{const k=txKey(t),q=pool.get(k);q?q.push(t.id):pool.set(k,[t.id])});
+  remote.tx.forEach(t=>{const q=pool.get(txKey(t));t.id=q&&q.length?q.shift():uid()});
+  return remote;
+}
 function localChanges(base,cur){
   if(!base)return {ops:[],cats:false,unknown:true};
   const bm=new Map(base.tx.map(t=>[t.id,t])), cm=new Map(cur.tx.map(t=>[t.id,t])), ops=[];
@@ -798,17 +848,18 @@ function rebase(remote,ch,cur){
 }
 /* принять данные таблицы как согласованные; правки, сделанные во время запроса, накатываются сверху */
 function adopt(data,rev,sentSnapshot){
-  const remote=sanitizeDB(data);
+  const snap=sentSnapshot?JSON.parse(sentSnapshot):null;
+  const remote=keepIds(sanitizeDB(data),snap||DB);
   let next=remote;
-  if(sentSnapshot&&JSON.stringify(DB)!==sentSnapshot){next=rebase(remote,localChanges(JSON.parse(sentSnapshot),DB),DB)}
+  if(snap&&JSON.stringify(DB)!==sentSnapshot){next=rebase(remote,localChanges(snap,DB),DB)}
   DB=next;setBase(remote);setRev(rev);save(true);
   if(!years().includes(ui.year))ui.year=years()[0];
   safeRender();
   return next!==remote;
 }
-/* перерисовка без потери открытого окна и фокуса в поиске */
+/* перерисовка без потери открытого окна и фокуса в поиске; при открытом окне откладывается до его закрытия */
 function safeRender(){
-  if(!$("#overlay").hidden)return;
+  if(!$("#overlay").hidden){renderPending=true;return}
   const a=document.activeElement,id=a&&a.id,pos=a&&a.selectionStart;
   renderSelectors();render();
   if(id){const n=document.getElementById(id);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}}
@@ -825,22 +876,31 @@ async function syncCycle(){
   finally{syncBusy=false}
 }
 async function syncOnce(){
-  const base=loadBase();
+  let base=loadBase();
+  // прошлая отправка осталась без ответа: если скрипт её применил, согласованным считаем отправленное —
+  // иначе те же правки посчитались бы заново и задвоились в таблице
+  const pend=loadPending();
+  if(pend&&base){
+    const a=await syncApi("pull",{knownRev:getRev(),askPush:pend.id});
+    if(a.applied===true){base=pend.snap;setBase(base)}
+  }
+  if(pend)setPending(null);
   const ch=localChanges(base,DB);
   if(ch.unknown){ // ещё ни разу не синхронизировались на этом устройстве — источник правды таблица
     const j=await syncApi("pull");adopt(j.data,j.rev);return;
   }
   if(!ch.ops.length&&!ch.cats){
     if(!$("#overlay").hidden)return; // открыто окно — не дёргаем данные под рукой
+    const before=JSON.stringify(DB); // правки, сделанные за время запроса, adopt накатит поверх данных таблицы
     const j=await syncApi("pull",{knownRev:getRev()});
-    if(!j.same)adopt(j.data,j.rev);
+    if(!j.same&&adopt(j.data,j.rev,before))syncAgain=true;
     return;
   }
   setSync("syncing");
   let payload=DB,baseRev=getRev();
   for(let attempt=0;attempt<3;attempt++){
     const sent=JSON.stringify(DB);
-    const j=await syncApi("push",{data:payload,baseRev});
+    const j=await pushApi(payload,sent,{baseRev});
     if(j.ok!==false){
       if(j.data){if(adopt(j.data,j.rev,sent))syncAgain=true}
       else{setBase(JSON.parse(sent));setRev(j.rev)}
@@ -858,11 +918,11 @@ function scheduleSync(){
   clearTimeout(syncTimer);syncTimer=setTimeout(syncCycle,1200);
 }
 async function forcePull(){
-  try{setSync("syncing");const j=await syncApi("pull");setBase(null);adopt(j.data,j.rev);setSync("ok");toast("Загружено из таблицы")}
+  try{setSync("syncing");const j=await syncApi("pull");setBase(null);setPending(null);adopt(j.data,j.rev);setSync("ok");toast("Загружено из таблицы")}
   catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}
 }
 async function forcePush(){
-  try{setSync("syncing");const sent=JSON.stringify(DB);const j=await syncApi("push",{data:DB,force:true});
+  try{setSync("syncing");const sent=JSON.stringify(DB);const j=await pushApi(DB,sent,{force:true});
     if(j.data)adopt(j.data,j.rev,sent);else{setBase(JSON.parse(sent));setRev(j.rev)}
     setSync("ok");toast("Отправлено в таблицу")}
   catch(e){setSync("error",e.message);toast("Ошибка: "+e.message)}
@@ -870,7 +930,8 @@ async function forcePush(){
 function startSyncLoop(){
   if(!syncConfigured())return;
   syncCycle();
-  setInterval(()=>{if(document.visibilityState==="visible")syncCycle()},SYNC_POLL_MS);
+  clearInterval(syncLoopT); // повторное подключение не должно плодить второй таймер опроса
+  syncLoopT=setInterval(()=>{if(document.visibilityState==="visible")syncCycle()},SYNC_POLL_MS);
 }
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")syncCycle()});
 window.addEventListener("online",()=>syncCycle());
@@ -916,9 +977,9 @@ function openSyncSettings(){
     const was=syncConfigured();
     SYNC={url,token};persistSync();closeModal();render();
     // новое подключение: источник правды — таблица, её данные и берём
-    if(!was){setBase(null);forcePull().then(startSyncLoop)}else syncCycle();
+    if(!was){setBase(null);setPending(null);forcePull().then(startSyncLoop)}else syncCycle();
   };
-  if(syncConfigured())$("#syOff").onclick=()=>confirmBox("Отключить синхронизацию? Данные останутся на устройстве.",()=>{SYNC=null;persistSync();setBase(null);closeModal();render();toast("Синхронизация отключена")},true);
+  if(syncConfigured())$("#syOff").onclick=()=>confirmBox("Отключить синхронизацию? Данные останутся на устройстве.",()=>{SYNC=null;persistSync();setBase(null);setPending(null);clearInterval(syncLoopT);closeModal();render();toast("Синхронизация отключена")},true);
 }
 
 /* ---------- global events ---------- */
@@ -938,14 +999,16 @@ function onAct(e){
       ()=>{if(type==="income")DB.incomeCats=DB.incomeCats.filter(c=>c.name!==name);else DB.expenseCats=DB.expenseCats.filter(c=>c.name!==name);save();render();toast("Удалено")},true)}
   else if(act==="renameGroup"){const type=a.dataset.type,g=a.dataset.group;openRename("Переименовать группу",g,v=>{
     catsFor(type).forEach(c=>{if(c.group===g)c.group=v});DB.tx.forEach(t=>{if(t.type===type&&t.group===g)t.group=v});save();render();toast("Переименовано")})}
+  else if((act==="addPerson"||act==="delPerson")&&syncConfigured())toast("Имена меняются в Google-таблице");
   else if(act==="addPerson"){const v=$("#newPerson").value.trim();if(!v)return toast("Введите имя");if(DB.names.includes(v))return toast("Уже есть");DB.names.push(v);save();render();toast("Добавлено")}
   else if(act==="delPerson"){const n=a.dataset.name,cnt=DB.tx.filter(t=>t.name===n).length;
     confirmBox(cnt?`Удалить «${n}»? У ${cnt} ${plural(cnt,"операции","операций","операций")} останется это имя.`:`Удалить «${n}»?`,
       ()=>{DB.names=DB.names.filter(x=>x!==n);save();render();toast("Удалено")},true)}
   else if(act==="exportCopy")openExport();
   else if(act==="importOpen")openImport();
-  else if(act==="resetSeed")confirmBox("Вернуть исходные данные из Excel? Текущие изменения будут потеряны.",()=>{DB=seedDB();save();ui.year=years()[0];ui.month="all";renderSelectors();render();toast("Сброшено к исходным")},true);
-  else if(act==="clearTx")confirmBox("Удалить все операции? Категории и люди останутся.",()=>{DB.tx=[];save();render();toast("Операции удалены")},true);
+  else if(act==="resetSeed"){if(!HAS_SEED)return toast("Исходных данных в этой сборке нет");
+    confirmBox("Вернуть исходные данные из Excel? Текущие изменения будут потеряны"+(syncConfigured()?" — и в приложении, и в Google-таблице.":"."),()=>{DB=seedDB();save();ui.year=years()[0];ui.month="all";renderSelectors();render();toast("Сброшено к исходным")},true)}
+  else if(act==="clearTx")confirmBox(syncConfigured()?"Удалить все операции? Они удалятся и из Google-таблицы. Категории и люди останутся.":"Удалить все операции? Категории и люди останутся.",()=>{DB.tx=[];save();render();toast("Операции удалены")},true);
   else if(act==="syncSettings")openSyncSettings();
   else if(act==="syncNow"){if(!syncConfigured())toast("Синхронизация не настроена");else syncCycle().then(()=>toast(syncStatus.state==="ok"?"Синхронизировано":"Ошибка: "+syncStatus.msg))}
   else if(act==="syncPullForce")confirmBox("Заменить данные в приложении данными из таблицы?",forcePull);
@@ -982,9 +1045,9 @@ DB=load();
 ui.year=years()[0];
 applyTheme(curTheme());
 try{$("#verLbl").textContent="v"+APP_VERSION}catch(_){}
+SYNC=loadSync();
 renderSelectors();
 render();
-SYNC=loadSync();
 startSyncLoop();
 
 if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(()=>{})}
