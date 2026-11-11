@@ -237,6 +237,21 @@ svg .baseline{stroke:var(--line-2);stroke-width:1}
 .chipbtn.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
 .datebtn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:space-between;gap:8px}
 .datebtn::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg)}
+/* выбор категории: своя панель с поиском вместо системного списка (на Android он открывается неудобным оверлеем) */
+.catbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;min-height:46px}
+.catbtn>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.catbtn::after{content:"";flex:0 0 auto;width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:translateY(-2px) rotate(45deg)}
+.catbtn.ph{color:var(--muted)}
+.catpick{margin-top:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:8px}
+.catpick .search input{background:var(--surface)}
+.catlist{max-height:min(46vh,340px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;margin-top:6px}
+.cpg{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:650;padding:10px 8px 4px}
+.cpi{display:flex;width:100%;align-items:baseline;justify-content:space-between;gap:10px;padding:11px 8px;border-radius:10px;text-align:left;font-size:15px}
+.cpi>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cpi small{flex:0 0 auto;color:var(--muted);font-size:12px}
+.cpi:active{background:var(--surface-3)}
+.cpi.on{background:var(--accent-bg);color:var(--accent);font-weight:650}
+.catlist .empty{padding:18px 8px}
 .cal{margin-top:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:8px 8px 10px}
 .cal-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;font-weight:650;font-size:15px}
 .cal-hd button{width:40px;height:40px;border-radius:12px;font-size:22px;line-height:1;color:var(--ink-2)}
@@ -315,7 +330,7 @@ const MONTHS=["Январь","Февраль","Март","Апрель","Май"
 const MONTHS_GEN=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
 const MONTHS_SH=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const LS_KEY="raskhody_v1", LS_THEME="raskhody_theme";
-const APP_VERSION=("11".indexOf("__")===0?"dev":"11");
+const APP_VERSION=("12".indexOf("__")===0?"dev":"12");
 const HAS_SEED=SEED_RAW.expenses.length+SEED_RAW.incomes.length>0; // в публичной сборке исходных операций нет — только категории
 const PAL=["--c1","--c2","--c3","--c4","--c5","--c6","--c7","--c8"];
 
@@ -599,17 +614,42 @@ function confirmBox(msg,onYes,danger){
     <button class="btn ${danger?"danger":"primary"} block" id="confYes">Да</button></div></div>`,true);
   $("#confYes").onclick=()=>{closeModal();onYes()};
 }
-function catOptions(type,sel){
-  const groups=groupsFor(type);
-  return groups.map(g=>`<optgroup label="${esc(g)}">`+catsFor(type).filter(c=>c.group===g)
-    .map(c=>`<option${c.name===sel?" selected":""}>${esc(c.name)}</option>`).join("")+`</optgroup>`).join("");
-}
-/* список категорий для формы: без выбранной — пустой пункт (чтобы первая категория не подставлялась молча);
-   категория, которой нет в справочнике (удалена или пришла из таблицы), показывается как есть — сохранение её не подменит */
-function catSelect(type,sel){
-  const known=catsFor(type).some(c=>c.name===sel);
-  return (sel?"":`<option value="">— выбери категорию —</option>`)+
-    (sel&&!known?`<option selected>${esc(sel)}</option>`:"")+catOptions(type,sel);
+/* выбор категории в форме операции: кнопка + панель с поиском; значение — в скрытом #txCat.
+   Категория, которой нет в справочнике (удалена или пришла из таблицы), остаётся выбранной — сохранение её не подменит */
+const normQ=s=>String(s||"").toLowerCase().replace(/ё/g,"е");
+function bindCatPicker(getType){
+  const inp=$("#txCat"),btn=$("#catBtn"),pick=$("#catPick"),q=$("#catQ"),list=$("#catList");
+  const paint=()=>{$("#catLbl").textContent=inp.value||"— выбери категорию —";btn.classList.toggle("ph",!inp.value)};
+  const item=(c,withGroup)=>`<button type="button" class="cpi${c.name===inp.value?" on":""}" data-cat="${esc(c.name)}"><span>${esc(c.name)}</span>${withGroup?`<small>${esc(c.group)}</small>`:""}</button>`;
+  const draw=()=>{
+    const type=getType(),cats=catsFor(type),s=normQ(q.value.trim());
+    let h="";
+    if(!s){
+      // сверху — самые частые категории этого типа, дальше весь справочник по группам
+      const cnt=new Map();DB.tx.forEach(t=>{if(t.type===type)cnt.set(t.category,(cnt.get(t.category)||0)+1)});
+      const freq=cats.filter(c=>cnt.get(c.name)).sort((x,y)=>cnt.get(y.name)-cnt.get(x.name)).slice(0,6);
+      if(freq.length>2&&cats.length>8)h+=`<div class="cpg">Частые</div>`+freq.map(c=>item(c,true)).join("");
+      groupsFor(type).forEach(g=>{h+=`<div class="cpg">${esc(g)}</div>`+cats.filter(c=>c.group===g).map(c=>item(c,false)).join("")});
+    }else{
+      // ищем и по названию, и по группе; совпадения с начала названия — выше
+      const rank=c=>normQ(c.name).startsWith(s)?0:normQ(c.name).includes(s)?1:2;
+      const hit=cats.filter(c=>normQ(c.name).includes(s)||normQ(c.group).includes(s)).sort((x,y)=>rank(x)-rank(y));
+      h=hit.length?hit.map(c=>item(c,true)).join(""):`<div class="empty">Ничего не нашлось</div>`;
+    }
+    list.innerHTML=h;list.scrollTop=0;
+  };
+  const close=()=>{pick.hidden=true;q.blur()};
+  btn.onclick=()=>{
+    if(!pick.hidden)return close();
+    $("#cal").hidden=true;q.value="";draw();pick.hidden=false;q.focus();
+    // после появления клавиатуры прокручиваем форму так, чтобы поиск и список были видны
+    setTimeout(()=>{try{btn.scrollIntoView({block:"start",behavior:"smooth"})}catch(_){}},300);
+  };
+  q.oninput=draw;
+  q.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();const first=list.querySelector("[data-cat]");if(first)first.click()}};
+  list.onclick=e=>{const b=e.target.closest("[data-cat]");if(!b)return;inp.value=b.dataset.cat;close();paint()};
+  paint();
+  return {set(v){inp.value=v||"";close();paint()},close};
 }
 function openTxSheet(tx){
   const edit=!!tx;
@@ -628,7 +668,12 @@ function openTxSheet(tx){
         <div class="datebar"><button type="button" class="chipbtn" data-dq="0">Сегодня</button><button type="button" class="chipbtn" data-dq="1">Вчера</button>
           <button type="button" class="chipbtn datebtn" id="dateBtn"><span id="dateLbl"></span></button></div>
         <div class="cal" id="cal" hidden></div></div>
-      <div><label>Категория</label><select class="in" id="txCat">${catSelect(t.type,t.category)}</select></div>
+      <div><label>Категория</label><input type="hidden" id="txCat" value="${esc(t.category)}">
+        <button type="button" class="in catbtn" id="catBtn"><span id="catLbl"></span></button>
+        <div class="catpick" id="catPick" hidden>
+          <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+            <input type="search" id="catQ" placeholder="Найти категорию…" autocomplete="off" enterkeyhint="done"></div>
+          <div class="catlist" id="catList"></div></div></div>
       <div><label>Кто</label><select class="in" id="txName">${nameOpts}</select></div>
       <div><label>Комментарий</label><textarea class="in" id="txComment" placeholder="необязательно">${esc(t.comment)}</textarea></div>
       <button class="btn primary block" id="txSave" style="margin-top:4px">${edit?"Сохранить":"Добавить"}</button>
@@ -637,9 +682,10 @@ function openTxSheet(tx){
     </div></div>`);
   bindDatePicker();
   let type=t.type;
+  const cp=bindCatPicker(()=>type);
   $("#txType").querySelectorAll("button").forEach(b=>b.onclick=()=>{type=b.dataset.v;
     $("#txType").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
-    $("#txCat").innerHTML=catSelect(type,type===t.type?t.category:"")});
+    cp.set(type===t.type?t.category:"")});
   // операцию могли изменить или удалить в таблице, пока форма была открыта: тогда её id в данных уже нет
   const gone=()=>{closeModal();render();toast("Операция изменилась на другом устройстве — открой её заново")};
   $("#txSave").onclick=()=>{
@@ -678,7 +724,7 @@ function bindDatePicker(){
     document.querySelectorAll("[data-dq]").forEach(b=>{const on=inp.value===dayAgo(+b.dataset.dq);b.classList.toggle("on",on);quick=quick||on});
     $("#dateBtn").classList.toggle("on",!quick)};
   const draw=()=>{cal.innerHTML=calHTML(vy,vm,inp.value)};
-  $("#dateBtn").onclick=()=>{if(cal.hidden){const v=validDate(inp.value)?inp.value:today();vy=pY(v);vm=pM(v);draw();cal.hidden=false}else cal.hidden=true};
+  $("#dateBtn").onclick=()=>{if(cal.hidden){$("#catPick").hidden=true;const v=validDate(inp.value)?inp.value:today();vy=pY(v);vm=pM(v);draw();cal.hidden=false}else cal.hidden=true};
   cal.onclick=e=>{const b=e.target.closest("button");if(!b)return;
     if(b.dataset.nav){vm+=+b.dataset.nav;if(vm<0){vm=11;vy--}else if(vm>11){vm=0;vy++}draw();return}
     if(b.dataset.d){inp.value=b.dataset.d;cal.hidden=true;paint()}};
